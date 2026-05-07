@@ -25,8 +25,9 @@ async def audio_stream(request: Request):
                 if chunk:
                     yield chunk
                 else:
-                    # 队列为空，发送静默等待
-                    await asyncio.sleep(1)
+                    # 队列为空，发送极短的静音保持连接活跃
+                    yield b""
+                    await asyncio.sleep(0.5)
         finally:
             stream_service.listener_disconnected()
             logger.info("Stream listener disconnected")

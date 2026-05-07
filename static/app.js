@@ -46,23 +46,62 @@ function initPlayer() {
         STATE.volume = e.target.value / 100;
         audio.volume = STATE.volume;
     });
+
+    // 监听音频事件
+    audio.addEventListener('waiting', () => updatePlayState(true, '缓冲中...'));
+    audio.addEventListener('playing', () => {
+        updatePlayState(true, '正在播放');
+        document.getElementById('visualizer').classList.add('active');
+    });
+    audio.addEventListener('pause', () => {
+        document.getElementById('visualizer').classList.remove('active');
+    });
+    audio.addEventListener('error', () => {
+        updatePlayState(false, '连接失败，请重试');
+        document.getElementById('visualizer').classList.remove('active');
+    });
+
+    // 定期更新当前播放标题
+    setInterval(updateCurrentTrack, 5000);
+}
+
+async function updateCurrentTrack() {
+    if (!STATE.isPlaying) return;
+    try {
+        const resp = await fetch(`${API_BASE}/api/podcasts/current`);
+        const data = await resp.json();
+        if (data.podcast && data.podcast.title) {
+            document.getElementById('playerTitle').textContent = data.podcast.title;
+            document.getElementById('playerSource').textContent = data.playlist_name || '';
+        }
+        document.getElementById('queueLength').textContent = data.queue_length || '0';
+    } catch (e) { /* ignore */ }
 }
 
 function togglePlay() {
     const audio = document.getElementById('audioPlayer');
     if (STATE.isPlaying) {
         audio.pause();
-        audio.src = '';
         updatePlayState(false, '已暂停');
-        document.getElementById('visualizer').classList.remove('active');
     } else {
+        // 先检查是否有可用内容
+        fetch(`${API_BASE}/stream/status`).then(r => r.json()).then(status => {
+            if (status.queue_length === 0 && status.queue_duration === 0) {
+                document.getElementById('playerTitle').textContent = '队列为空，等待内容生成...';
+                document.getElementById('playerSource').textContent = '流水线运行中，请稍候';
+            }
+        }).catch(() => {});
+
         audio.src = `${API_BASE}/stream`;
-        audio.play().catch(err => {
+        updatePlayState(true, '正在连接...');
+        audio.load();
+        audio.play().then(() => {
+            updatePlayState(true, '正在播放');
+            document.getElementById('visualizer').classList.add('active');
+        }).catch(err => {
             console.error('Stream play failed:', err);
-            updatePlayState(false, '连接中...');
+            updatePlayState(false, '播放失败，请先触发采集生成内容');
         });
-        updatePlayState(true, '正在播放');
-        document.getElementById('visualizer').classList.add('active');
     }
 }
 
