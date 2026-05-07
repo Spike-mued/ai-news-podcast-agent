@@ -1,0 +1,26 @@
+# News source types
+SOURCE_TYPE_RSS = "rss"
+SOURCE_TYPE_WEB = "web_scraper"
+SOURCE_TYPE_API = "api"
+
+# Pipeline statuses
+PIPELINE_STATUS_IDLE = "idle"
+PIPELINE_STATUS_RUNNING = "running"
+PIPELINE_STATUS_COMPLETED = "completed"
+PIPELINE_STATUS_FAILED = "failed"
+
+# Audio segment types
+SEGMENT_TYPE_INTRO = "intro"
+SEGMENT_TYPE_NEWS = "news"
+SEGMENT_TYPE_OUTRO = "outro"
+SEGMENT_TYPE_TRANSITION = "transition"
+
+# Importance levels
+IMPORTANCE_CRITICAL = (9, 10)
+IMPORTANCE_HIGH = (6, 8)
+IMPORTANCE_MEDIUM = (4, 5)
+IMPORTANCE_LOW = (1, 3)
+
+# Stream buffer
+STREAM_CHUNK_SIZE = 4096
+STREAM_SILENCE_INTERVAL = 2.0

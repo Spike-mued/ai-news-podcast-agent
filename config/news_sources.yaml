@@ -1,0 +1,87 @@
+# AI 新闻源配置
+# 每个源包含：名称、类型(rss/web/api)、URL、语言、优先级权重、采集间隔(秒)
+
+sources:
+  # ===== 中文 AI 新闻源 =====
+  - name: "机器之心"
+    type: rss
+    url: "https://www.jiqizhixin.com/rss"
+    language: zh
+    priority: 10
+    interval: 1800
+
+  - name: "量子位"
+    type: web
+    url: "https://www.qbitai.com"
+    language: zh
+    priority: 9
+    interval: 1800
+
+  - name: "36氪AI"
+    type: rss
+    url: "https://36kr.com/feed?cid=ai"
+    language: zh
+    priority: 8
+    interval: 1800
+
+  - name: "InfoQ AI"
+    type: rss
+    url: "https://www.infoq.cn/feed?cid=ai"
+    language: zh
+    priority: 7
+    interval: 1800
+
+  # ===== 英文 AI 新闻源 =====
+  - name: "TechCrunch AI"
+    type: rss
+    url: "https://techcrunch.com/category/artificial-intelligence/feed/"
+    language: en
+    priority: 8
+    interval: 1800
+
+  - name: "MIT Technology Review AI"
+    type: rss
+    url: "https://www.technologyreview.com/feed/ai/"
+    language: en
+    priority: 8
+    interval: 1800
+
+  - name: "The Verge AI"
+    type: rss
+    url: "https://www.theverge.com/ai-artificial-intelligence/rss/index.xml"
+    language: en
+    priority: 7
+    interval: 1800
+
+  - name: "ArXiv AI"
+    type: rss
+    url: "https://arxiv.org/rss/cs.AI"
+    language: en
+    priority: 6
+    interval: 3600
+
+  - name: "Hacker News AI"
+    type: web
+    url: "https://news.ycombinator.com/"
+    language: en
+    priority: 5
+    interval: 1800
+
+# 采集配置
+collection:
+  parallel_fetch: true
+  max_concurrent: 5
+  request_timeout: 30
+  user_agent: "AI-News-Podcast-Agent/1.0"
+  retry_count: 3
+  retry_delay: 5
+
+# 去重配置
+dedup:
+  title_similarity_threshold: 0.85
+  content_hash_algorithm: "md5"
+
+# 排序配置
+ranking:
+  min_importance_score: 4
+  max_news_items: 15
