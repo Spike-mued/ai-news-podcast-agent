@@ -9,6 +9,7 @@ from loguru import logger
 from app.api.health import router as health_router
 from app.api.news import router as news_router
 from app.api.podcast import router as podcast_router
+from app.api.sources import router as sources_router
 from app.api.stream import router as stream_router
 from app.agents.playlist_manager.scheduler import start_scheduler, stop_scheduler
 from app.config import config
@@ -45,6 +46,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(news_router)
 app.include_router(podcast_router)
+app.include_router(sources_router)
 app.include_router(stream_router)
 
 try:

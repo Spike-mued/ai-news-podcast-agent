@@ -64,10 +64,9 @@ class AudioService:
                 continue
 
             if len(combined) > 0 and len(segment) > 0:
-                # 添加过渡音：短暂的淡出-淡入 + 轻柔的间隔
-                transition_ms = min(800, crossfade_ms)
-                silence_gap = AudioSegment.silent(duration=400)
-                combined = combined.fade_out(transition_ms) + silence_gap + segment.fade_in(transition_ms)
+                # 快速平滑过渡：300ms 交叉淡入淡出，无静音间隔
+                transition_ms = 300
+                combined = combined.fade_out(transition_ms) + segment.fade_in(transition_ms)
             else:
                 combined = segment
 
@@ -77,9 +76,16 @@ class AudioService:
 
         combined = combined.set_frame_rate(config.audio_sample_rate)
 
+        # 整体音量归一化
+        try:
+            change = -16.0 - combined.dBFS
+            combined = combined.apply_gain(change)
+        except Exception:
+            pass
+
         output_path = get_playlist_path(output_filename)
         combined.export(output_path, format=config.audio_format, bitrate=config.stream_bitrate)
-        logger.info(f"Concatenated {len(audio_files)} files → {output_path} ({len(combined) / 1000:.1f}s)")
+        logger.info(f"Concatenated {len(audio_files)} files → {output_path} ({len(combined) / 1000:.1f}s, {len(combined)/1000/60:.1f}min)")
         return output_path
 
     def _simple_concat(self, audio_files: list[str], output_filename: str) -> str:

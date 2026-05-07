@@ -27,10 +27,21 @@ async def synthesize_audio(state: PodcastWriterState) -> dict:
             script_text = script_item.get("script", "")
             title = script_item.get("title", "untitled")
             language = script_item.get("language", "zh")
+            score = script_item.get("importance_score", 5)
 
-            voice = config.tts_voice
             if language == "en":
-                voice = "en-US-JennyNeural"
+                voice = config.tts_voice_en
+            elif score >= 8:
+                voice = config.tts_voice_zh
+            else:
+                voice = config.tts_voice_zh
+
+            if score >= 8:
+                rate = config.tts_rate_slow
+            elif score >= 5:
+                rate = config.tts_rate_normal
+            else:
+                rate = config.tts_rate_fast
 
             safe_name = hashlib.md5(title.encode()).hexdigest()[:12]
             filename = f"{index:03d}_{safe_name}.mp3"
@@ -45,13 +56,14 @@ async def synthesize_audio(state: PodcastWriterState) -> dict:
                 communicate = edge_tts.Communicate(
                     text=script_text,
                     voice=voice,
-                    rate=config.tts_rate,
+                    rate=rate,
+                    pitch=config.tts_pitch,
                     volume=config.tts_volume,
                 )
                 await communicate.save(filepath)
 
                 audio_segments.append({**script_item, "audio_path": filepath, "filename": filename})
-                logger.info(f"TTS [{index + 1}/{len(scripts)}]: {title[:40]}... → {filename}")
+                logger.info(f"TTS [{index + 1}/{len(scripts)}]: {title[:40]}... → {filename} (voice={voice}, rate={rate})")
             except Exception as e:
                 logger.error(f"TTS failed for '{title}': {e}")
                 errors.append(f"TTS failed: {title}")

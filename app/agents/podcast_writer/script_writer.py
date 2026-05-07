@@ -7,117 +7,166 @@ from app.core.constants import IMPORTANCE_CRITICAL, IMPORTANCE_HIGH, IMPORTANCE_
 from app.core.llm_factory import llm_factory
 
 
-SCRIPT_PROMPT = """你是一个AI科技播客的主播，风格轻松幽默，像一个懂技术的朋友在聊天。请将以下AI新闻转写成口语化的播客脚本。
+BATCH_SCRIPT_PROMPT = """你是一个AI科技播客的主播，风格轻松幽默，像一个懂技术的朋友在聊天。
 
-## 新闻信息
-- 标题：{title}
-- 来源：{source}
-- 重要性评分：{score}/10
+下面是一组今天要播报的AI/科技新闻，请你将它们写成一篇连贯的口播稿。
 
-## 脚本长度要求
-{length_requirement}
+## 规则
+1. 输出一个JSON数组，数组中每个元素是一条新闻的口播脚本
+2. 每条脚本之间要有自然的过渡（"接下来看看..."、"还有一个重磅消息..."、"说到这个，我想起..."等）
+3. 第一条脚本要包含开场白（"嘿大家好，欢迎收听AI新闻播客..."）
+4. 最后一条脚本要包含结束语（"好了，以上就是今天的AI新闻简报，我们下次再见！"）
+5. 中间每条脚本的结尾要自然地引出下一条
 
-## 风格指南
-- 中文为主，关键技术术语保留英文
-- 开场用「嘿，大家好」或类似的轻松开场
-- 加入自然的过渡词（"接下来看看"、"还有一个有意思的消息"）
-- 结尾可以用简短的总结或评论
-- 可以适当加入「嗯」「说实话」「你猜怎么着」等口语化表达
-- 读起来像朋友在聊天，不是新闻联播
+## 脚本长度（每条）
+- 重要性9-10分：400-600字（深度解读，2-3分钟）
+- 重要性7-8分：200-400字（标准报道，1-2分钟）
+- 重要性4-6分：100-200字（简要播报，30-60秒）
 
-请直接输出播客脚本，不要加任何标记。"""
+## 风格
+- 中文为主，技术术语保留英文
+- 口语化，像朋友聊天不是新闻联播
+- 适当加入「说实话」「有意思的是」「大家猜怎么着」等口语
 
-LENGTH_REQUIREMENTS = {
-    "critical": "深度解读模式：2-3分钟的脚本（约400-600字），包含背景分析、技术细节、行业影响",
-    "high": "标准报道模式：1-2分钟的脚本（约200-400字），清晰介绍新闻要点和影响",
-    "medium": "简要提及模式：30秒-1分钟的脚本（约100-200字），快速带过核心信息",
-    "low": "一句话带过：30秒以内（约50-100字）",
-}
+## 新闻列表
+{news_json}
 
-
-def _get_length_requirement(score: int) -> str:
-    if IMPORTANCE_CRITICAL[0] <= score <= IMPORTANCE_CRITICAL[1]:
-        return LENGTH_REQUIREMENTS["critical"]
-    elif IMPORTANCE_HIGH[0] <= score <= IMPORTANCE_HIGH[1]:
-        return LENGTH_REQUIREMENTS["high"]
-    elif IMPORTANCE_MEDIUM[0] <= score <= IMPORTANCE_MEDIUM[1]:
-        return LENGTH_REQUIREMENTS["medium"]
-    return LENGTH_REQUIREMENTS["low"]
+请直接返回JSON数组，格式：[{{"url": "...", "script": "..."}}, ...]，不要加任何其他文字。"""
 
 
-def _generate_fallback_script(title: str, source: str, score: int) -> str:
-    """当 LLM 不可用时，生成足够长的 fallback 播客脚本（约 200-400 字，1-2 分钟）"""
-    if score >= 7:
-        template = (
-            f"嘿，大家好！今天有一条重磅消息要和大家聊聊。这条新闻来自{source}，说的是：{title}。"
-            f"这条消息之所以重要，是因为它对整个AI行业都有深远的影响。我们来仔细分析一下，"
-            f"首先从技术角度来看，这代表了行业的一个重要突破。不仅展示了技术的前沿方向，"
-            f"更可能改变我们未来使用AI的方式。其次从产业层面来说，这个消息可能会影响"
-            f"从芯片到应用层的整个产业链。对于开发者来说，这意味着新的工具和机会；"
-            f"对于普通用户来说，这意味着更智能的产品体验。说实话，看到这个消息的时候，"
-            f"我个人是非常兴奋的。因为这意味着AI技术又向前迈进了一大步。"
-            f"我们会持续关注这个方向的最新动态，第一时间带来深度解读。"
-            f"好了，这就是今天要和大家分享的重磅消息，我们下一条新闻见。"
-        )
-    elif score >= 5:
-        template = (
-            f"来关注一条来自{source}的消息：{title}。这条新闻挺有意思的，"
-            f"对AI行业来说值得关注。简单说一下背景，最近行业内类似的消息不少，"
-            f"但这一条有其独特之处。它反映了当前技术发展的一个新趋势，"
-            f"对于关注AI的朋友来说是不容错过的信息。从实际应用角度看，"
-            f"这个消息可能会带来一些有意思的变化。无论是对于开发者还是用户，"
-            f"都值得保持关注。我们也会继续跟踪后续进展，有新消息第一时间告诉大家。"
-            f"好了，说完这条，我们接着往下看。"
-        )
-    else:
-        template = (
-            f"快速播报一条来自{source}的资讯：{title}。"
-            f"简短来说，这是AI领域的一个新动向，虽然可能不是最重磅的消息，"
-            f"但对于关注行业动态的朋友来说也值得一看。科技发展日新月异，"
-            f"每一条新闻背后都反映着行业的脉动。好了，这条就到这里。"
-        )
-    return template
+FALLBACK_TRANSITIONS = [
+    "接下来看看另一条消息。",
+    "还有一个值得关注的新闻。",
+    "再来看一条有意思的消息。",
+    "下面这条也很重要。",
+    "接着往下看。",
+    "说完这个，再看看另一个消息。",
+]
 
 
-async def write_scripts(state: PodcastWriterState) -> dict:
-    """为每条新闻生成播客脚本"""
-    news_items = state.get("news_items", [])
-    if not news_items:
-        logger.warning("No news items to write scripts for")
-        return {"scripts": [], "status": "completed"}
-
+def _generate_batch_fallback(news_items: list[dict]) -> list[dict]:
+    """当 LLM 不可用时，生成连贯的 fallback 脚本"""
     scripts: list[dict] = []
-    errors: list[str] = []
+    total = len(news_items)
 
     for i, item in enumerate(news_items):
         title = item.get("title", "Unknown")
         source = item.get("source", "Unknown")
         score = item.get("importance_score", 5)
 
-        length_req = _get_length_requirement(score)
+        # 根据位置添加过渡
+        prefix = ""
+        suffix = ""
+        if i == 0:
+            prefix = "嘿大家好，欢迎收听AI新闻播客。今天的第一条新闻："
+        elif i < total - 1:
+            from random import choice
+            prefix = choice(FALLBACK_TRANSITIONS)
+        else:
+            prefix = "最后一条新闻："
 
-        try:
-            llm = llm_factory.create_chat_model(temperature=0.8, streaming=False)
-            prompt = SCRIPT_PROMPT.format(title=title, source=source, score=score, length_requirement=length_req)
-            response = await llm.ainvoke(prompt)
-            script_text = response.content if hasattr(response, "content") else str(response)
-            script_text = script_text.strip()
-        except Exception as e:
-            logger.error(f"Script generation failed for '{title}': {e}")
-            errors.append(f"Script failed: {title}")
-            script_text = _generate_fallback_script(title, source, score)
+        if i == total - 1:
+            suffix = "好了，以上就是今天的AI新闻简报，我们下期再见！"
 
-        scripts.append(
-            {
-                "news_url": item.get("url", ""),
-                "title": title,
-                "source": source,
-                "importance_score": score,
-                "script": script_text,
-                "language": item.get("language", "zh"),
-            }
-        )
-        logger.info(f"Script [{i + 1}/{len(news_items)}]: {title[:40]}... ({len(script_text)} chars)")
+        if score >= 7:
+            body = (
+                f"{title}。这条消息来自{source}，分量很重。"
+                f"它反映了当前AI行业的一个重要趋势，对技术发展有深远影响。"
+                f"从应用角度看，这个消息可能会带来新的产品形态和用户体验升级。"
+                f"行业内的关注度很高，值得持续跟踪后续进展。"
+            )
+        elif score >= 5:
+            body = (
+                f"{title}。来自{source}的报道。"
+                f"这条新闻对关注AI的朋友来说值得留意，"
+                f"反映了行业正在发生的一些变化。"
+            )
+        else:
+            body = f"{title}。简短播报一下，来自{source}。对行业也是一个信号。"
 
-    logger.info(f"Generated {len(scripts)} scripts, {len(errors)} errors")
-    return {"scripts": scripts, "errors": errors, "status": "completed"}
+        script_text = f"{prefix}{body}{suffix}"
+        scripts.append({
+            "news_url": item.get("url", ""),
+            "title": title,
+            "source": source,
+            "importance_score": score,
+            "script": script_text,
+            "language": item.get("language", "zh"),
+            "is_first": i == 0,
+            "is_last": i == total - 1,
+        })
+
+    return scripts
+
+
+async def write_scripts_batch(news_items: list[dict]) -> list[dict]:
+    """尝试批量生成连贯脚本，失败则回退到逐条 fallback"""
+    if not news_items:
+        return []
+
+    news_for_llm = [
+        {
+            "index": i,
+            "title": item.get("title", ""),
+            "source": item.get("source", ""),
+            "score": item.get("importance_score", 5),
+            "url": item.get("url", ""),
+        }
+        for i, item in enumerate(news_items)
+    ]
+    news_json = json.dumps(news_for_llm, ensure_ascii=False, indent=2)
+
+    try:
+        llm = llm_factory.create_chat_model(temperature=0.8, streaming=False)
+        response = await llm.ainvoke(BATCH_SCRIPT_PROMPT.format(news_json=news_json))
+        content = response.content if hasattr(response, "content") else str(response)
+        content = content.strip()
+        if content.startswith("```"):
+            start = content.index("[")
+            end = content.rindex("]") + 1
+            content = content[start:end]
+        llm_scripts = json.loads(content)
+    except Exception as e:
+        logger.warning(f"Batch script generation failed: {e}, using fallback")
+        return _generate_batch_fallback(news_items)
+
+    # 合并 LLM 生成的脚本与原始新闻数据
+    scripts: list[dict] = []
+    for i, item in enumerate(news_items):
+        llm_script = llm_scripts[i] if i < len(llm_scripts) else {}
+        scripts.append({
+            "news_url": item.get("url", ""),
+            "title": item.get("title", ""),
+            "source": item.get("source", ""),
+            "importance_score": item.get("importance_score", 5),
+            "script": llm_script.get("script", _quick_fallback(item)),
+            "language": item.get("language", "zh"),
+            "is_first": i == 0,
+            "is_last": i == len(news_items) - 1,
+        })
+
+    return scripts
+
+
+def _quick_fallback(item: dict) -> str:
+    title = item.get("title", "")
+    source = item.get("source", "")
+    return f"来自{source}的消息：{title}。我们来关注一下这个新闻。"
+
+
+async def write_scripts(state: PodcastWriterState) -> dict:
+    """为所有新闻生成连贯的播客脚本"""
+    news_items = state.get("news_items", [])
+    if not news_items:
+        logger.warning("No news items to write scripts for")
+        return {"scripts": [], "status": "completed"}
+
+    try:
+        scripts = await write_scripts_batch(news_items)
+    except Exception as e:
+        logger.error(f"Script generation completely failed: {e}")
+        scripts = _generate_batch_fallback(news_items)
+
+    total_chars = sum(len(s["script"]) for s in scripts)
+    logger.info(f"Generated {len(scripts)} scripts, total {total_chars} chars")
+    return {"scripts": scripts, "errors": [], "status": "completed"}

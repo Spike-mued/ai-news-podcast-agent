@@ -24,10 +24,16 @@ class Settings(BaseSettings):
     news_collection_interval_minutes: int = 30
     news_max_items: int = 15
     news_importance_threshold: int = 4
+    news_keywords: str = ""
+    news_keywords_mode: str = "boost"
 
     # TTS
-    tts_voice: str = "zh-CN-XiaoxiaoNeural"
-    tts_rate: str = "+10%"
+    tts_voice_zh: str = "zh-CN-YunxiNeural"
+    tts_voice_en: str = "en-US-JennyNeural"
+    tts_rate_slow: str = "-5%"
+    tts_rate_normal: str = "+5%"
+    tts_rate_fast: str = "+15%"
+    tts_pitch: str = "+0Hz"
     tts_volume: str = "+0%"
 
     # Audio

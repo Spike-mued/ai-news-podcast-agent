@@ -72,8 +72,17 @@ async def rank_news(state: NewsCollectorState) -> dict:
                 item["importance_reason"] = "Default score (ranking failed)"
                 all_ranked.append(item)
 
+    # 关键词加分
+    keywords = _get_keywords()
+    if keywords:
+        all_ranked = _boost_keywords(all_ranked, keywords)
+
     # 按分数降序排序
     all_ranked.sort(key=lambda x: x.get("importance_score", 0), reverse=True)
+
+    # 关键词模式下过滤不匹配的新闻
+    if config.news_keywords_mode == "include" and keywords:
+        all_ranked = [n for n in all_ranked if n.get("_keyword_match", False) or n.get("importance_score", 0) >= 8]
 
     # 截取 Top N
     final_news = all_ranked[:max_items]
@@ -81,8 +90,30 @@ async def rank_news(state: NewsCollectorState) -> dict:
     # 保存到数据库
     await _save_to_db(final_news)
 
-    logger.info(f"Ranked: {len(deduped)} → {len(final_news)} items (top {max_items})")
+    logger.info(f"Ranked: {len(deduped)} → {len(final_news)} items (top {max_items}, keywords={keywords})")
     return {"ranked_news": all_ranked, "final_news": final_news, "pipeline_status": "completed"}
+
+
+def _get_keywords() -> list[str]:
+    """解析关键词配置"""
+    raw = config.news_keywords.strip()
+    if not raw:
+        return []
+    return [k.strip().lower() for k in raw.split(",") if k.strip()]
+
+
+def _boost_keywords(items: list[dict], keywords: list[str]) -> list[dict]:
+    """对匹配关键词的新闻进行加分"""
+    for item in items:
+        title = item.get("title", "").lower()
+        summary = item.get("summary", "").lower()
+        text = title + " " + summary
+        matches = sum(1 for kw in keywords if kw.lower() in text)
+        if matches > 0:
+            item["importance_score"] = min(10, item.get("importance_score", 5) + matches)
+            item["importance_reason"] = f"{item.get('importance_reason', '')} [匹配关键词: +{matches}]"
+            item["_keyword_match"] = True
+    return items
 
 
 def _extract_json(text: str) -> str:

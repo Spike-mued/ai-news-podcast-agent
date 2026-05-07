@@ -1,8 +1,23 @@
 import aiosqlite
+from pathlib import Path
 
 from app.config import config
 from loguru import logger
 
+
+CREATE_NEWS_SOURCES_TABLE = """
+CREATE TABLE IF NOT EXISTS news_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    type TEXT NOT NULL DEFAULT 'rss',
+    url TEXT NOT NULL,
+    language TEXT DEFAULT 'zh',
+    priority INTEGER DEFAULT 5,
+    is_enabled INTEGER DEFAULT 1,
+    keywords TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+"""
 
 CREATE_NEWS_TABLE = """
 CREATE TABLE IF NOT EXISTS news (
@@ -81,12 +96,30 @@ CREATE_PODCAST_INDEXES = [
 ]
 
 
+async def _seed_sources_from_yaml(db: aiosqlite.Connection):
+    """首次启动时从 YAML 导入预设新闻源到数据库"""
+    yaml_path = Path("config/news_sources.yaml")
+    if not yaml_path.exists():
+        return
+    import yaml
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    for src in cfg.get("sources", []):
+        await db.execute(
+            "INSERT OR IGNORE INTO news_sources (name, type, url, language, priority) VALUES (?, ?, ?, ?, ?)",
+            (src.get("name", ""), src.get("type", "rss"), src.get("url", ""), src.get("language", "zh"), src.get("priority", 5)),
+        )
+    await db.commit()
+    logger.info(f"Seeded {len(cfg.get('sources', []))} sources from YAML")
+
+
 async def init_database() -> aiosqlite.Connection:
     db = await aiosqlite.connect(config.database_path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA journal_mode=WAL")
     await db.execute("PRAGMA foreign_keys=ON")
 
+    await db.execute(CREATE_NEWS_SOURCES_TABLE)
     await db.execute(CREATE_NEWS_TABLE)
     await db.execute(CREATE_PODCAST_TABLE)
     await db.execute(CREATE_PLAYLIST_TABLE)
@@ -96,6 +129,13 @@ async def init_database() -> aiosqlite.Connection:
         await db.execute(idx_sql)
 
     await db.commit()
+
+    # 从 YAML 种子数据
+    cursor = await db.execute("SELECT COUNT(*) FROM news_sources")
+    count = (await cursor.fetchone())[0]
+    if count == 0:
+        await _seed_sources_from_yaml(db)
+
     logger.info("Database initialized successfully")
     return db
 

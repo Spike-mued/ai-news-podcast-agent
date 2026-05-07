@@ -12,6 +12,7 @@ async def collect_news(state: NewsCollectorState) -> dict:
     sources = state.get("sources", [])
     max_items = state.get("max_items", 15)
 
+    await source_registry.load_from_db()
     source_instances = source_registry.get_sources(sources) if sources else source_registry.get_enabled_sources()
     max_concurrent = source_registry.collection_config.get("max_concurrent", 5)
 

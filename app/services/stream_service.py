@@ -47,25 +47,35 @@ class StreamService:
         return sum(item.get("duration", 0) for item in self.play_queue)
 
     async def get_audio_chunk(self) -> bytes | None:
-        """读取当前播放位置的音频数据块"""
+        """读取当前播放位置的音频数据块，队列空时循环最后一个播单"""
         async with _queue_lock:
             if not self.play_queue:
-                return None
+                if _stream_state.get("_last_file") and os.path.exists(_stream_state["_last_file"]):
+                    _stream_state["current_file"] = _stream_state["_last_file"]
+                    _stream_state["position"] = 0
+                    _stream_state["total_bytes"] = os.path.getsize(_stream_state["_last_file"])
+                    _stream_state["_looping"] = True
+                    logger.debug("Queue empty, looping last playlist")
+                else:
+                    return None
 
-            current = self.play_queue[0]
-            filepath = current["path"]
+            current = self.play_queue[0] if self.play_queue else {"path": _stream_state.get("_last_file", "")}
+            filepath = current.get("path", "") if isinstance(current, dict) else ""
 
-            if not os.path.exists(filepath):
-                self.play_queue.pop(0)
+            if not filepath or not os.path.exists(filepath):
+                if self.play_queue:
+                    self.play_queue.pop(0)
                 _stream_state["current_file"] = None
                 _stream_state["position"] = 0
                 return await self.get_audio_chunk()
 
             if _stream_state["current_file"] != filepath:
+                _stream_state["_last_file"] = filepath
                 _stream_state["current_file"] = filepath
                 _stream_state["position"] = 0
                 _stream_state["total_bytes"] = os.path.getsize(filepath)
                 _stream_state["started_at"] = time.time()
+                _stream_state["_looping"] = False
 
             try:
                 with open(filepath, "rb") as f:
@@ -75,13 +85,15 @@ class StreamService:
                         _stream_state["position"] += len(chunk)
                         return chunk
                     else:
-                        self.play_queue.pop(0)
+                        if self.play_queue:
+                            self.play_queue.pop(0)
                         _stream_state["current_file"] = None
                         _stream_state["position"] = 0
                         return await self.get_audio_chunk()
             except Exception as e:
                 logger.error(f"Stream read error: {e}")
-                self.play_queue.pop(0)
+                if self.play_queue:
+                    self.play_queue.pop(0)
                 return await self.get_audio_chunk()
 
     def get_status(self) -> dict:

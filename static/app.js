@@ -32,6 +32,7 @@ function initTabs() {
             if (STATE.currentTab === 'news') loadNews();
             else if (STATE.currentTab === 'podcasts') loadPodcasts();
             else if (STATE.currentTab === 'playlists') loadPlaylists();
+            else if (STATE.currentTab === 'sources') loadSources();
         });
     });
 }
@@ -171,6 +172,98 @@ function initFilters() {
         STATE.newsPage = 1;
         loadNews();
     });
+
+    // 动态填充来源下拉菜单
+    fetch(`${API_BASE}/api/sources`).then(r => r.json()).then(data => {
+        const sel = document.getElementById('sourceFilter');
+        if (data.items) {
+            data.items.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.name;
+                opt.textContent = s.name;
+                sel.appendChild(opt);
+            });
+        }
+    }).catch(() => {});
+}
+
+// === 新闻源管理 ===
+async function loadSources() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/sources`);
+        const data = await resp.json();
+        renderSourceList(data.items || []);
+    } catch (err) {
+        document.getElementById('sourceList').innerHTML = '<div class="empty-state">加载失败</div>';
+    }
+
+    document.getElementById('btnAddSource').onclick = async () => {
+        const name = document.getElementById('srcName').value.trim();
+        const type = document.getElementById('srcType').value;
+        const url = document.getElementById('srcUrl').value.trim();
+        const lang = document.getElementById('srcLang').value;
+        const keywords = document.getElementById('srcKeywords').value.trim();
+        if (!name || !url) { alert('请填写名称和URL'); return; }
+
+        try {
+            const resp = await fetch(`${API_BASE}/api/sources`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, type, url, language: lang, keywords }),
+            });
+            if (resp.ok) {
+                document.getElementById('srcName').value = '';
+                document.getElementById('srcUrl').value = '';
+                document.getElementById('srcKeywords').value = '';
+                loadSources();
+            } else {
+                const err = await resp.json();
+                alert(err.detail || '添加失败');
+            }
+        } catch (e) { alert('网络错误'); }
+    };
+}
+
+function renderSourceList(items) {
+    const container = document.getElementById('sourceList');
+    if (!items || items.length === 0) {
+        container.innerHTML = '<div class="empty-state">暂无新闻源，请添加</div>';
+        return;
+    }
+    container.innerHTML = items.map(s => `
+        <div class="news-item source-item">
+            <div class="news-content">
+                <div class="news-title">
+                    ${s.is_enabled ? '🟢' : '⚫'} ${escapeHtml(s.name)}
+                    <span style="font-size:12px;color:var(--text-muted)">[${s.type}] ${s.language}</span>
+                </div>
+                <div class="news-summary" style="font-size:11px;word-break:break-all">${escapeHtml(s.url)}</div>
+                <div class="news-meta">
+                    <span>优先级: ${s.priority}</span>
+                    ${s.keywords ? `<span>关键词: ${escapeHtml(s.keywords)}</span>` : ''}
+                    <button class="btn-small" onclick="toggleSource('${escapeHtml(s.name)}', ${s.is_enabled ? 0 : 1})">
+                        ${s.is_enabled ? '禁用' : '启用'}
+                    </button>
+                    <button class="btn-small btn-danger" onclick="deleteSource('${escapeHtml(s.name)}')">删除</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function toggleSource(name, enable) {
+    await fetch(`${API_BASE}/api/sources/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_enabled: !!enable }),
+    });
+    loadSources();
+}
+
+async function deleteSource(name) {
+    if (!confirm(`确定删除新闻源 "${name}"？`)) return;
+    await fetch(`${API_BASE}/api/sources/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    loadSources();
 }
 
 // === 加载新闻列表 ===

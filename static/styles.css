@@ -450,6 +450,72 @@ body {
     font-size: 15px;
 }
 
+/* === 新闻源管理面板 === */
+.sources-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.source-form {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+}
+
+.source-form h3 {
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+}
+
+.form-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.form-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.form-input.full-width {
+    flex: none;
+    width: 100%;
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.source-item .btn-small {
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.source-item .btn-small:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.source-item .btn-danger:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
 /* === 分页 === */
 .pagination {
     display: flex;

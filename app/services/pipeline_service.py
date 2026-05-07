@@ -85,16 +85,12 @@ async def run_playlist_building(state: PipelineState) -> dict:
     playlist_duration = concat_result.get("playlist_duration", 0)
 
     if playlist_path:
-        # 加入流媒体队列
         stream_service.add_to_queue(playlist_path, playlist_duration)
-
-    # 管理流队列
-    stream_result = await manage_stream_queue({"audio_segments": [], "errors": [], "playlist_path": playlist_path, "playlist_duration": playlist_duration, "segment_count": 0, "queue_length": 0, "stream_status": "ready", "next_trigger_time": "", "current_position": 0})
 
     return {
         "playlist_path": playlist_path,
         "playlist_duration": playlist_duration,
-        "queue_status": stream_result.get("stream_status", "ready"),
+        "queue_status": "playing" if playlist_path else "empty",
         "errors": concat_result.get("errors", []),
     }
 
@@ -165,8 +161,17 @@ async def run_full_pipeline(sources: list[str] | None = None, max_items: int | N
 
 
 async def scheduled_pipeline_trigger():
-    """定时器触发的流水线执行"""
-    logger.info("Scheduled pipeline trigger")
+    """定时器触发的流水线执行，也会在队列不足时提前触发"""
+    queue_duration = stream_service.queue_duration()
+    if queue_duration > 600:
+        logger.debug(f"Queue sufficient ({queue_duration:.0f}s), skipping trigger")
+        return
+
+    if queue_duration < 300:
+        logger.info(f"Queue LOW ({queue_duration:.0f}s) — triggering pipeline early")
+    else:
+        logger.info("Scheduled pipeline trigger")
+
     try:
         result = await run_full_pipeline()
         logger.info(f"Scheduled pipeline: {result.get('success')}")
