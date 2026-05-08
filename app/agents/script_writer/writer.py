@@ -112,7 +112,7 @@ async def write_scripts_node(state: ScriptWriterState) -> dict:
 
     scripts: list[dict] = []
     try:
-        llm = llm_factory.create_chat_model(temperature=0.8, streaming=False)
+        llm = llm_factory.create_chat_model(temperature=0.8, streaming=False, timeout=15)
         response = await llm.ainvoke(BATCH_SCRIPT_PROMPT.format(news_json=news_json))
         content = response.content if hasattr(response, "content") else str(response)
         content = content.strip()
