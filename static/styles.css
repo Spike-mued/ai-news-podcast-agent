@@ -124,12 +124,14 @@ body {
 
 /* Source form */
 .source-form { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
-.input {
-  padding:8px 12px; font-size:13px;
+.input, select.input {
+  padding:8px 12px; font-size:13px; height:36px;
   border:1px solid var(--border); border-radius:var(--radius);
   background:var(--bg-card); color:var(--text-primary);
   min-width:120px;
+  font-family: inherit; cursor:pointer;
 }
+select.input { appearance:none; -webkit-appearance:none; padding-right:28px; }
 .input:focus { border-color:var(--accent); outline:none; }
 
 .source-list { display:flex; flex-direction:column; gap:1px; }

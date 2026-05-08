@@ -28,7 +28,7 @@ Return ONLY the JSON array, no other text."""
 
 
 async def rank_news(state: NewsCollectorState) -> dict:
-    """使用 LLM 对新闻进行重要性评分和排序"""
+    """快速评分：关键词+来源优先级，可选 LLM 重排"""
     deduped = state.get("deduplicated_news", [])
     max_items = state.get("max_items", config.news_max_items)
 
@@ -36,61 +36,56 @@ async def rank_news(state: NewsCollectorState) -> dict:
         logger.warning("No news to rank")
         return {"ranked_news": [], "final_news": [], "pipeline_status": "completed"}
 
-    # 超过一定数量时分批评分
-    batch_size = 10
-    all_ranked: list[dict] = []
-
-    for i in range(0, len(deduped), batch_size):
-        batch = deduped[i : i + batch_size]
-
-        # 构建简化的新闻列表给 LLM
-        news_for_llm = [{"title": n["title"], "url": n["url"], "source": n["source"]} for n in batch]
-        news_json = json.dumps(news_for_llm, ensure_ascii=False, indent=2)
-
-        try:
-            llm = llm_factory.create_chat_model(temperature=0.3, streaming=False)
-            response = await llm.ainvoke(RANKING_PROMPT.format(news_json=news_json))
-            content = response.content if hasattr(response, "content") else str(response)
-            content = _extract_json(content)
-            scores = json.loads(content)
-
-            # 合并评分到新闻条目
-            score_map = {s["url"]: (s.get("score", 5), s.get("reason", "")) for s in scores}
-
-            for item in batch:
-                score, reason = score_map.get(item["url"], (5, ""))
-                if score < config.news_importance_threshold:
-                    continue
-                item["importance_score"] = score
-                item["importance_reason"] = reason
-                all_ranked.append(item)
-
-        except Exception as e:
-            logger.error(f"Ranking batch failed: {e}")
-            for item in batch:
-                item["importance_score"] = 5
-                item["importance_reason"] = "Default score (ranking failed)"
-                all_ranked.append(item)
-
-    # 关键词加分
+    # Step 1: 快速预排序（关键词 + 来源优先级）
     keywords = _get_keywords()
-    if keywords:
-        all_ranked = _boost_keywords(all_ranked, keywords)
+    for item in deduped:
+        title = item.get("title", "").lower()
+        summary = item.get("summary", "").lower()
+        text = title + " " + summary
+        kw_match = sum(1 for kw in keywords if kw.lower() in text) if keywords else 0
+        base_score = min(9, 4 + item.get("priority_weight", 5) // 2 + kw_match)
+        item["importance_score"] = base_score
+        item["importance_reason"] = f"快速评分 (匹配{kw_match}关键词, 优先级{item.get('priority_weight',5)})"
+
+    # Step 2: 预排序取 Top N
+    deduped.sort(key=lambda x: x.get("importance_score", 0), reverse=True)
+    top_n = min(len(deduped), max(40, max_items * 2))
+    candidates = deduped[:top_n]
+
+    # Step 3: LLM 精排 Top 20（单批次快速完成）
+    llm_batch = candidates[:20]
+    try:
+        llm = llm_factory.create_chat_model(temperature=0.3, streaming=False, timeout=30)
+        news_for_llm = [{"title": n["title"][:80], "url": n["url"], "source": n["source"]} for n in llm_batch]
+        news_json = json.dumps(news_for_llm, ensure_ascii=False)
+        response = await llm.ainvoke(RANKING_PROMPT.format(news_json=news_json))
+        content = response.content if hasattr(response, "content") else str(response)
+        content = _extract_json(content)
+        scores = json.loads(content)
+        score_map = {s["url"]: (s.get("score", 5), s.get("reason", "")) for s in scores}
+        for item in llm_batch:
+            score, reason = score_map.get(item["url"], (item.get("importance_score", 5), ""))
+            item["importance_score"] = score
+            item["importance_reason"] = reason
+    except Exception as e:
+        logger.warning(f"LLM ranking failed, using heuristic scores: {e}")
+        # 快速评分已经完成，继续使用启发式分数
 
     # 按分数降序排序
-    all_ranked.sort(key=lambda x: x.get("importance_score", 0), reverse=True)
+    candidates.sort(key=lambda x: x.get("importance_score", 0), reverse=True)
 
-    # 关键词模式下过滤不匹配的新闻
+    # 关键词模式下过滤低相关度新闻
     if config.news_keywords_mode == "include" and keywords:
-        all_ranked = [n for n in all_ranked if n.get("_keyword_match", False) or n.get("importance_score", 0) >= 8]
+        candidates = [n for n in candidates if n.get("importance_score", 0) >= 6]
 
     # 截取 Top N
-    final_news = all_ranked[:max_items]
+    all_ranked = candidates
+    final_news = candidates[:max_items]
 
     # 保存到数据库
     await _save_to_db(final_news)
 
-    logger.info(f"Ranked: {len(deduped)} → {len(final_news)} items (top {max_items}, keywords={keywords})")
+    logger.info(f"Ranked: {len(deduped)} → {len(final_news)} items (top {max_items})")
     return {"ranked_news": all_ranked, "final_news": final_news, "pipeline_status": "completed"}
 
 
@@ -100,20 +95,6 @@ def _get_keywords() -> list[str]:
     if not raw:
         return []
     return [k.strip().lower() for k in raw.split(",") if k.strip()]
-
-
-def _boost_keywords(items: list[dict], keywords: list[str]) -> list[dict]:
-    """对匹配关键词的新闻进行加分"""
-    for item in items:
-        title = item.get("title", "").lower()
-        summary = item.get("summary", "").lower()
-        text = title + " " + summary
-        matches = sum(1 for kw in keywords if kw.lower() in text)
-        if matches > 0:
-            item["importance_score"] = min(10, item.get("importance_score", 5) + matches)
-            item["importance_reason"] = f"{item.get('importance_reason', '')} [匹配关键词: +{matches}]"
-            item["_keyword_match"] = True
-    return items
 
 
 def _extract_json(text: str) -> str:

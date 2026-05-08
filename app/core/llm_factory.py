@@ -13,6 +13,7 @@ class LLMFactory:
         streaming: bool = True,
         base_url: str | None = None,
         api_key: str | None = None,
+        timeout: int = 60,
     ) -> ChatOpenAI:
         return ChatOpenAI(
             model=model or config.dashscope_model,
@@ -20,6 +21,7 @@ class LLMFactory:
             api_key=api_key or config.dashscope_api_key,
             temperature=temperature,
             streaming=streaming,
+            request_timeout=timeout,
         )
 
     @staticmethod
