@@ -46,18 +46,18 @@ class StreamService:
     def queue_duration(self) -> float:
         return sum(item.get("duration", 0) for item in self.play_queue)
 
-    async def get_audio_chunk(self) -> bytes | None:
-        """读取当前播放位置的音频数据块，队列空时循环最后一个播单"""
+    async def get_audio_chunk(self) -> bytes:
+        """读取当前播放位置的音频数据块。队列空时循环最后一个文件，永不返回 None"""
         async with _queue_lock:
             if not self.play_queue:
-                if _stream_state.get("_last_file") and os.path.exists(_stream_state["_last_file"]):
-                    _stream_state["current_file"] = _stream_state["_last_file"]
+                last = _stream_state.get("_last_file")
+                if last and os.path.exists(last):
+                    _stream_state["current_file"] = last
                     _stream_state["position"] = 0
-                    _stream_state["total_bytes"] = os.path.getsize(_stream_state["_last_file"])
+                    _stream_state["total_bytes"] = os.path.getsize(last)
                     _stream_state["_looping"] = True
-                    logger.debug("Queue empty, looping last playlist")
                 else:
-                    return None
+                    return b""  # 真的没有任何文件时返回空字节，但不中断流
 
             current = self.play_queue[0] if self.play_queue else {"path": _stream_state.get("_last_file", "")}
             filepath = current.get("path", "") if isinstance(current, dict) else ""

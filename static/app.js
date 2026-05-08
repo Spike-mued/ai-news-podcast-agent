@@ -33,28 +33,52 @@ function initTabs() {
   });
 }
 
-// ---- Audio (background, no UI bar) ----
+// ---- Audio (background auto-play, auto-reconnect) ----
 function initAudio() {
+  const audio = $('audio');
   const btn = $('#btnAudio');
+  let reconnectTimer = null;
+
+  function startStream() {
+    audio.src = API + '/stream';
+    audio.load();
+    audio.play().then(() => {
+      STATE.audioOn = true;
+      btn.textContent = '🔊';
+      btn.classList.add('on');
+    }).catch(() => {
+      btn.textContent = '🔇';
+      btn.classList.remove('on');
+      // 自动重试
+      reconnectTimer = setTimeout(startStream, 3000);
+    });
+  }
+
+  // 流断开时自动重连
+  audio.addEventListener('ended', () => { reconnectTimer = setTimeout(startStream, 1000); });
+  audio.addEventListener('error', () => { reconnectTimer = setTimeout(startStream, 2000); });
+  audio.addEventListener('stalled', () => {
+    // 短暂卡顿不处理，长时间卡顿才重连
+    reconnectTimer = setTimeout(() => {
+      if (audio.readyState < 3) startStream();
+    }, 5000);
+  });
+
   btn.addEventListener('click', () => {
-    const a = $('audio');
     if (STATE.audioOn) {
-      a.pause();
+      clearTimeout(reconnectTimer);
+      audio.pause();
+      audio.src = '';
       btn.textContent = '🔇';
       btn.classList.remove('on');
       STATE.audioOn = false;
     } else {
-      a.src = API + '/stream';
-      a.load();
-      a.play().then(() => {
-        STATE.audioOn = true;
-        btn.textContent = '🔊';
-        btn.classList.add('on');
-      }).catch(() => {
-        btn.textContent = '🔇';
-      });
+      startStream();
     }
   });
+
+  // 页面加载后自动开始播放
+  setTimeout(startStream, 1000);
 }
 
 // ---- Pipeline ----

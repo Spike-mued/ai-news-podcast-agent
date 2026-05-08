@@ -59,6 +59,101 @@ def _build_rag_context(related_news: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _fallback_zh_high(title: str, source: str, score: int, history_ref: str) -> str:
+    """高分中文新闻：400-500 字 ≈ 2分钟口播"""
+    return (
+        f"先来看看这条重磅消息：{title}。这条新闻来自{source}，分量非常重，我们来仔细聊一聊。"
+        f"首先从技术角度看，这确实代表了一个重要的行业突破。它不只是一个概念验证，"
+        f"而是真正有可能改变现有技术格局的东西。我们来想一下它的影响——"
+        f"对于开发者来说，这意味着新的工具链、新的API、新的工作方式。"
+        f"对于企业来说，这可能带来效率上的质的飞跃，甚至改变整个业务流程。"
+        f"对于普通用户来说，体验上的提升会非常明显，虽然你可能感觉不到底层技术的变化，"
+        f"但产品的智能化程度会大大提高。"
+        f"{history_ref}"
+        f"从整个行业生态来看，这类消息的密集出现说明AI技术正在加速落地，"
+        f"不再是纸上谈兵。技术成熟度、商业可行性、用户接受度，这三个维度都在同步推进。"
+        f"我们会持续跟踪这个方向的后续进展，有新消息第一时间在这里更新。"
+        f"说实话，看到这样的消息，我个人是非常兴奋的。"
+        f"因为它意味着人工智能又向前迈进了一大步，而这还只是一个开始。"
+    )
+
+
+def _fallback_zh_mid(title: str, source: str, score: int, history_ref: str) -> str:
+    """中等中文新闻：300-350 字 ≈ 1.5分钟口播"""
+    return (
+        f"再来看看这条新闻：{title}。报道来自{source}，这条消息值得关注。"
+        f"简单说一下背景——这个话题最近在行业里的讨论热度比较高，"
+        f"很多人都注意到了这个方向的进展。它的重要性在于反映了当前技术发展的一个新趋势。"
+        f"对于一直在关注AI领域的朋友来说，这是一个值得留意的信号。"
+        f"从实际应用的角度来看，这可能会带来一些相当有意思的产品变化。"
+        f"比如在智能助手、代码生成、内容创作这些场景里，我们可能会看到新的可能性。"
+        f"{history_ref}"
+        f"当然，技术的发展从来不是一蹴而就的。这条消息背后反映了整个行业在某个方向上的共同努力。"
+        f"不管是技术层面的突破还是商业模式的创新，都值得我们去理解和消化。"
+        f"我们会继续关注这个方向的后续发展。"
+    )
+
+
+def _fallback_zh_low(title: str, source: str, score: int, history_ref: str) -> str:
+    """低分中文新闻：250+ 字 ≈ 1分钟口播"""
+    return (
+        f"快速看一下这条消息：{title}。这是{source}的报道。"
+        f"虽然可能不是今天最重要的头条新闻，但对整个行业来说也是一个值得注意的信号。"
+        f"简单来说，这说明AI领域的发展正在从多个维度同时向前推进。"
+        f"技术研发、产品落地、商业模式创新、监管政策制定，各个方面都在发生着变化。"
+        f"每一条新闻背后，都反映着行业的一些细微变化和趋势调整。"
+        f"对于从业者和关注AI的朋友来说，花点时间了解这些动态，"
+        f"有助于建立更完整的行业认知和判断框架。"
+        f"关注细节、关注趋势，才能对行业有更深入的理解。"
+        f"{history_ref}"
+        f"好了，这条消息就说到这儿。"
+    )
+
+
+def _fallback_en(title: str, source: str, score: int, history_ref: str) -> str:
+    """英文新闻脚本：确保足够长度"""
+    if score >= 7:
+        return (
+            f"Let's dive into this major story: {title}. This comes to us from {source}, "
+            f"and it's a significant development in the AI space. "
+            f"From a technical perspective, this represents a real breakthrough — not just a proof of concept, "
+            f"but something that could genuinely change how we build and deploy AI systems. "
+            f"For developers and engineers, this means new tools, new APIs, and new ways of working. "
+            f"For companies, it could translate into major efficiency gains and entirely new product categories. "
+            f"The broader implication is that AI technology is accelerating from research into production, "
+            f"and the gap between cutting-edge research and real-world applications is narrowing fast. "
+            f"{history_ref}"
+            f"We'll be keeping a close eye on how this develops. "
+            f"This is exactly the kind of story that makes following AI so exciting right now — "
+            f"every week brings something that would have seemed like science fiction just a few years ago. "
+            f"And honestly, I think we're still in the early innings of this transformation."
+        )
+    elif score >= 5:
+        return (
+            f"Next up: {title}. This story from {source} is worth paying attention to. "
+            f"This topic has been generating a fair amount of discussion in the AI community recently, "
+            f"and for good reason. It reflects an emerging trend in how AI technology is evolving, "
+            f"particularly around practical applications and real-world deployment. "
+            f"For those of you building or using AI tools, this is a signal worth noting. "
+            f"The implications could range from new product features to shifts in developer workflows. "
+            f"{history_ref}"
+            f"Of course, technology development is never a straight line — "
+            f"there are always twists and turns along the way. But this direction looks promising, "
+            f"and we'll be watching to see how it plays out in the coming weeks and months."
+        )
+    else:
+        return (
+            f"A quick update from {source}: {title}. "
+            f"While this may not be the biggest headline of the day, it's another data point "
+            f"showing that AI development is progressing on multiple fronts simultaneously. "
+            f"Technology, product design, business models, and regulatory frameworks are all evolving in parallel. "
+            f"Each piece of news like this helps build a more complete picture of where the industry is heading. "
+            f"{history_ref}"
+            f"For those keeping score at home, this is yet another signal that the AI landscape "
+            f"continues to shift and evolve at a remarkable pace. Stay tuned for more updates."
+        )
+
+
 def _generate_fallback(news_items: list[dict], related_news: list[dict] | None = None) -> list[dict]:
     """生成连贯的 fallback 脚本（无结尾，24h风格）"""
     scripts: list[dict] = []
@@ -85,35 +180,16 @@ def _generate_fallback(news_items: list[dict], related_news: list[dict] | None =
                     history_ref = f"这让人想起之前报道过的「{rn_title[:30]}」，可以说是那个方向的延续。"
                     break
 
-        # 无结束语的主内容（长度≥250字确保1分钟+）
-        if score >= 7:
-            body = (
-                f"先来看看{title}。这条来自{source}的消息非常有分量。"
-                f"我们仔细聊聊这个事——首先从技术角度看，这确实代表了一个重要突破。"
-                f"它不仅仅是概念验证，而是真正可能改变行业格局的东西。"
-                f"对开发者来说，这意味着新的工具链和工作方式；"
-                f"对企业来说，这可能带来效率的质的飞跃；"
-                f"对普通用户来说，体验上的提升会非常明显。"
-                f"{history_ref}"
-                f"从整个行业生态来看，这类消息的密集出现说明技术正在加速落地。"
-                f"我们也会持续跟踪这个方向的后续进展，有新消息第一时间更新。"
-            )
+        # 根据语言选择模板
+        is_en = item.get("language", "zh") == "en"
+        if is_en:
+            body = _fallback_en(title, source, score, history_ref)
+        elif score >= 7:
+            body = _fallback_zh_high(title, source, score, history_ref)
         elif score >= 5:
-            body = (
-                f"来看看{title}。这个消息来自{source}。"
-                f"简单说一下背景——这个话题最近在行业里讨论得比较多。"
-                f"它的重要性在于反映了当前技术发展的一个新方向。"
-                f"对于一直在关注AI领域的朋友来说，这是值得留意的信号。"
-                f"从实际应用的角度看，可能会带来一些有意思的产品变化。"
-                f"{history_ref}"
-            )
+            body = _fallback_zh_mid(title, source, score, history_ref)
         else:
-            body = (
-                f"快速看看{title}。{source}的报道。"
-                f"虽然可能不是今天最重要的消息，但对行业也是一个信号。"
-                f"简单来说，这说明AI领域的发展正在从多个维度同时推进。"
-                f"每条新闻背后都反映着行业的一些细微变化。"
-            )
+            body = _fallback_zh_low(title, source, score, history_ref)
 
         scripts.append({
             "news_url": url,
