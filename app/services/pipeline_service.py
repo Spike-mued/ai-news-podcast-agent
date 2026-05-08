@@ -87,6 +87,7 @@ async def run_playlist_building(state: PipelineState) -> dict:
 
     if playlist_path:
         stream_service.add_to_queue(playlist_path, playlist_duration)
+        await _mark_news_used(state)
 
     return {
         "playlist_path": playlist_path,
@@ -94,6 +95,23 @@ async def run_playlist_building(state: PipelineState) -> dict:
         "queue_status": "playing" if playlist_path else "empty",
         "errors": concat_result.get("errors", []),
     }
+
+
+# ============================================================
+# Helpers
+# ============================================================
+async def _mark_news_used(state: PipelineState):
+    """标记新闻为已使用，供后续 RAG 检索"""
+    try:
+        db = await aiosqlite.connect(config.database_path)
+        for item in state.get("ranked_news", []):
+            url = item.get("url", "")
+            if url:
+                await db.execute("UPDATE news SET is_used = 1 WHERE url = ?", (url,))
+        await db.commit()
+        await db.close()
+    except Exception as e:
+        logger.debug(f"Failed to mark news as used: {e}")
 
 
 # ============================================================

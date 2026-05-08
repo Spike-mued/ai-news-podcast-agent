@@ -3,83 +3,69 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI News Podcast</title>
+<title>AI News Podcast — 24/7</title>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 
-<header class="header">
-  <div class="header-inner">
-    <div class="brand">
-      <span class="logo">AI News Podcast</span>
-      <span class="live-badge" id="liveBadge">● LIVE</span>
+<div class="app">
+  <!-- 左侧滚动字幕 -->
+  <aside class="ticker">
+    <div class="ticker-header">
+      <span class="ticker-live">● LIVE</span>
+      <span class="ticker-title">实时播报</span>
     </div>
-    <nav class="nav-tabs">
-      <button class="nav-tab active" data-tab="news">新闻</button>
-      <button class="nav-tab" data-tab="podcasts">播客</button>
-      <button class="nav-tab" data-tab="sources">源管理</button>
-    </nav>
-    <div class="header-actions">
-      <button class="btn-small" id="btnTrigger" title="立即采集">采集</button>
-    </div>
-  </div>
-</header>
-
-<main class="main" id="mainContent">
-  <!-- 新闻列表 Tab -->
-  <section class="tab-panel active" id="panel-news">
-    <div class="news-filters">
-      <select id="sourceFilter" class="filter"><option value="">全部来源</option></select>
-      <select id="scoreFilter" class="filter">
-        <option value="0">全部评分</option><option value="7">≥ 7</option><option value="5">≥ 5</option>
-      </select>
-    </div>
-    <div class="news-list" id="newsList"></div>
-    <div class="pagination" id="newsPagination"></div>
-  </section>
-
-  <!-- 播客历史 Tab -->
-  <section class="tab-panel" id="panel-podcasts">
-    <div class="podcast-list" id="podcastList"></div>
-  </section>
-
-  <!-- 源管理 Tab -->
-  <section class="tab-panel" id="panel-sources">
-    <div class="source-form">
-      <input type="text" id="srcName" placeholder="源名称" class="input">
-      <select id="srcType" class="input"><option value="rss">RSS</option><option value="web">爬虫</option></select>
-      <input type="text" id="srcUrl" placeholder="URL" class="input">
-      <input type="text" id="srcKeywords" placeholder="关键词 (可选)" class="input">
-      <button class="btn-small" id="btnAddSource">添加</button>
-    </div>
-    <div class="source-list" id="sourceList"></div>
-  </section>
-</main>
-
-<!-- 底部播放栏 -->
-<footer class="player-bar" id="playerBar">
-  <div class="player-progress" id="playerProgress">
-    <div class="progress-track" id="progressTrack">
-      <div class="progress-fill" id="progressFill"></div>
-    </div>
-  </div>
-  <div class="player-inner">
-    <button class="play-btn" id="btnPlay" title="播放 / 暂停">
-      <span id="playIcon">▶</span>
-    </button>
-    <div class="player-meta">
-      <div class="player-title" id="playerTitle">AI News Podcast — 随时收听最新AI资讯</div>
-      <div class="player-time">
-        <span id="timeCurrent">00:00</span>
-        <span id="timeStatus">就绪</span>
+    <div class="ticker-track" id="tickerTrack">
+      <div class="ticker-items" id="tickerItems">
+        <div class="ticker-item">加载中...</div>
       </div>
     </div>
-    <div class="player-status">
-      <span class="status-dot" id="statusDot"></span>
-      <span class="status-label">队列 <strong id="queueLength">0</strong></span>
+    <div class="ticker-audio">
+      <button class="audio-toggle" id="btnAudio" title="播放/静音">🔊</button>
+      <span class="audio-label">AI News Podcast</span>
     </div>
-  </div>
-</footer>
+  </aside>
+
+  <!-- 主内容 -->
+  <main class="main">
+    <header class="header">
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="news">新闻列表</button>
+        <button class="nav-tab" data-tab="sources">源管理</button>
+        <button class="nav-tab" data-tab="podcasts">播客</button>
+      </nav>
+      <div class="header-actions">
+        <select id="sourceFilter" class="filter"><option value="">全部来源</option></select>
+        <button class="btn" id="btnTrigger">立即采集</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- 新闻列表 -->
+      <section class="tab-panel active" id="panel-news">
+        <div class="news-list" id="newsList"></div>
+        <div class="pagination" id="newsPagination"></div>
+      </section>
+
+      <!-- 源管理 -->
+      <section class="tab-panel" id="panel-sources">
+        <div class="source-form">
+          <input type="text" id="srcName" placeholder="名称" class="input">
+          <select id="srcType" class="input"><option value="rss">RSS</option><option value="web">爬虫</option></select>
+          <input type="text" id="srcUrl" placeholder="URL" class="input">
+          <input type="text" id="srcKeywords" placeholder="关键词" class="input">
+          <button class="btn" id="btnAddSource">添加</button>
+        </div>
+        <div class="source-list" id="sourceList"></div>
+      </section>
+
+      <!-- 播客 -->
+      <section class="tab-panel" id="panel-podcasts">
+        <div class="podcast-list" id="podcastList"><div class="empty-state">暂无播客</div></div>
+      </section>
+    </div>
+  </main>
+</div>
 
 <audio id="audioPlayer" preload="none"></audio>
 <script src="/static/app.js"></script>
