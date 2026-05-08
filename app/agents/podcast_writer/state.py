@@ -3,13 +3,10 @@ from typing import Annotated, TypedDict
 
 
 class PodcastWriterState(TypedDict):
-    """播客转译 Agent 状态"""
+    """播客转译 Agent 状态（TTS + 音频处理）"""
 
-    # 输入
-    news_items: list[dict]
-
-    # 脚本生成阶段
-    scripts: Annotated[list[dict], operator.add]
+    # 输入：来自 Script Writer Agent
+    scripts: list[dict]
 
     # TTS 合成阶段
     audio_segments: Annotated[list[dict], operator.add]

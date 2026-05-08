@@ -14,8 +14,10 @@ class PipelineState(TypedDict):
     deduplicated_news: list[dict]
     ranked_news: list[dict]
 
+    # 脚本撰写阶段
+    scripts: Annotated[list[dict], operator.add]
+
     # 播客转译阶段
-    podcast_scripts: Annotated[list[dict], operator.add]
     audio_segments: Annotated[list[dict], operator.add]
 
     # 播单管理阶段
