@@ -10,7 +10,6 @@ from app.sources.source_registry import source_registry
 async def collect_news(state: NewsCollectorState) -> dict:
     """从多个新闻源并行采集新闻"""
     sources = state.get("sources", [])
-    max_items = state.get("max_items", 15)
 
     await source_registry.load_from_db()
     source_instances = source_registry.get_sources(sources) if sources else source_registry.get_enabled_sources()

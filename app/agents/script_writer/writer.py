@@ -7,38 +7,56 @@ from loguru import logger
 
 from app.agents.script_writer.state import ScriptWriterState
 from app.core.llm_factory import llm_factory
+from app.utils.prompt_loader import load_prompt
 
+# 角色定义 — 参考 Podcast-Generator 的 podUsers 配置
+HOST = "主持人"
+EXPERT = "技术专家"
 
-BATCH_SCRIPT_PROMPT = """你是一个24小时不间断AI新闻播客的主播，风格轻松自然。
+SINGLE_STAGE_PROMPT = """你是一个24小时不间断AI新闻播客的脚本撰写人。请为一组AI/科技新闻撰写双人对话播客脚本。
 
-下面是一组今天要播报的AI/科技新闻，按重要性排序。请为每条新闻撰写播客脚本。
+## 角色定义
+- **{host}**：掌控节奏、引出话题、提问引导、过渡衔接。风格轻松亲和，口语化表达。
+- **{expert}**：深度解读技术细节、分析行业影响、补充专业观点。风格专业但不晦涩。
 
-## 核心规则
-- **每条脚本至少250字**（约1-2分钟口播），确保有足够深度
-- 每条脚本之间自然过渡，引出下一条新闻
-- 过渡示例："说到AI，还有一个消息..."、"紧接着来看看..."、"同样值得关注的是..."
-- **不要有任何结束语！** 不要说"下期再见"、"以上就是今天"等 — 因为播客24小时不间断
-- 第一条也不需要开场白，直接进入主题，像一直在播的电台一样自然接续
+## 对话规则
+- 每条新闻的对话 3-5 轮交替（{host}↔{expert}），有问有答，像两个朋友聊天
+- **严禁任何结束语**！不要说"下期再见""以上就是今天""感谢收听""我们下回再聊""这期节目就到这里""欢迎收听""大家好"等
+- 直接进入话题，像一直在播的电台一样自然接续，第一条新闻也不需要开场白
+- 新闻之间的过渡由{host}自然引出下一条
 
-## 脚本长度
-- 重要性9-10分：400-600字（深度解读）
-- 重要性7-8分：300-400字
-- 重要性4-6分：200-300字
+## 新闻之间过渡示例
+- "说到AI，还有一个消息值得关注..."
+- "紧接着来看看下一条新闻。"
+- "同样值得关注的还有这个。"
+- "换个角度，再来看一条相关消息。"
+
+## 对话长度
+- 重要性9-10分：5-6轮对话，总计600-800字
+- 重要性7-8分：4-5轮对话，总计400-600字
+- 重要性4-6分：3-4轮对话，总计250-400字
 
 ## 风格
-- 中文为主，技术术语保留英文
+- **必须全部使用中文！** 所有新闻内容（包括原本是英文的新闻）必须翻译为中文进行播报
+- 技术术语可保留英文原文，但新闻标题和内容必须翻译为中文
 - 口语化，朋友聊天风格
-- 适当加入"说实话""有意思的是""大家猜怎么着"等口语
+- 适当加入"说实话""有意思的是""大家猜怎么着""这个点特别值得展开聊聊"等口语表达
+- {expert}可以委婉补充或深化{host}的观点
+- {host}可以表达惊讶、好奇来引出{expert}的专业解读
 
 {rag_context}
 
 ## 新闻列表（按重要性排序）
 {news_json}
 
-请严格返回JSON数组：[{{"url": "...", "script": "..."}}, ...]，不要其他任何文字。"""
+请严格返回JSON数组：
+[{{"news_url": "...", "dialogue": [{{"speaker": "{host}", "text": "..."}}, {{"speaker": "{expert}", "text": "..."}}]}}, ...]
+只返回JSON数组，不要其他任何文字。"""
 
 
-FALLBACK_TRANSITIONS = [
+# ---- Fallback 模板 (双人对话版) ----
+
+_FALLBACK_TRANSITIONS_HOST = [
     "说到AI领域，再来看另一个消息。",
     "紧接着来看看下一条新闻。",
     "同样值得关注的还有这个消息。",
@@ -48,117 +66,74 @@ FALLBACK_TRANSITIONS = [
     "再说说另一个方向的发展。",
 ]
 
-
-def _build_rag_context(related_news: list[dict]) -> str:
-    """从历史新闻构建 RAG 上下文"""
-    if not related_news:
-        return ""
-    lines = ["## 近期已播报的相关新闻（避免重复，可引用）"]
-    for n in related_news[:5]:
-        lines.append(f"- [{n.get('source','')}] {n.get('title','')} (评分{n.get('importance_score',0)})")
-    return "\n".join(lines) + "\n"
+_EXPERT_OPENINGS = [
+    "没错，这条新闻确实值得好好聊聊。",
+    "对，这个消息分量很重。",
+    "是的，我也注意到了这个动向。",
+    "嗯，这确实是个重要的信号。",
+    "说得对，这个方向最近很受关注。",
+]
 
 
-def _fallback_zh_high(title: str, source: str, score: int, history_ref: str) -> str:
-    """高分中文新闻：400-500 字 ≈ 2分钟口播"""
-    return (
-        f"先来看看这条重磅消息：{title}。这条新闻来自{source}，分量非常重，我们来仔细聊一聊。"
-        f"首先从技术角度看，这确实代表了一个重要的行业突破。它不只是一个概念验证，"
-        f"而是真正有可能改变现有技术格局的东西。我们来想一下它的影响——"
-        f"对于开发者来说，这意味着新的工具链、新的API、新的工作方式。"
-        f"对于企业来说，这可能带来效率上的质的飞跃，甚至改变整个业务流程。"
-        f"对于普通用户来说，体验上的提升会非常明显，虽然你可能感觉不到底层技术的变化，"
-        f"但产品的智能化程度会大大提高。"
-        f"{history_ref}"
-        f"从整个行业生态来看，这类消息的密集出现说明AI技术正在加速落地，"
-        f"不再是纸上谈兵。技术成熟度、商业可行性、用户接受度，这三个维度都在同步推进。"
-        f"我们会持续跟踪这个方向的后续进展，有新消息第一时间在这里更新。"
-        f"说实话，看到这样的消息，我个人是非常兴奋的。"
-        f"因为它意味着人工智能又向前迈进了一大步，而这还只是一个开始。"
-    )
+def _fallback_dialogue_high(title: str, source: str, score: int, history_ref: str) -> list[dict]:
+    """高重要性：5轮对话 ~600字"""
+    return [
+        {"speaker": HOST, "text": f"先来看看这条重磅消息：{title}。这条新闻来自{source}，分量非常重，我们来仔细聊一聊。"},
+        {"speaker": EXPERT, "text": "没错，这条新闻确实值得深入解读。从技术角度来看，这代表了一个重要的行业突破。它不只是一个概念验证，而是真正有可能改变现有技术格局的东西。对于开发者来说，这意味着新的工具链、新的API、新的工作方式。"},
+        {"speaker": HOST, "text": "那对企业端和普通用户来说，会有什么直接影响吗？"},
+        {"speaker": EXPERT, "text": f"对企业来说，这可能带来效率上的质的飞跃，甚至改变整个业务流程。对于普通用户，虽然可能感觉不到底层技术的变化，但产品的智能化程度会大大提高。{history_ref}说实话，从整个行业生态来看，这类消息的密集出现说明AI技术正在加速落地，不再是纸上谈兵。"},
+        {"speaker": HOST, "text": "技术成熟度、商业可行性、用户接受度，这三个维度确实都在同步推进。我们会持续跟踪这个方向的后续进展，有新消息第一时间在这里更新。"},
+    ]
 
 
-def _fallback_zh_mid(title: str, source: str, score: int, history_ref: str) -> str:
-    """中等中文新闻：300-350 字 ≈ 1.5分钟口播"""
-    return (
-        f"再来看看这条新闻：{title}。报道来自{source}，这条消息值得关注。"
-        f"简单说一下背景——这个话题最近在行业里的讨论热度比较高，"
-        f"很多人都注意到了这个方向的进展。它的重要性在于反映了当前技术发展的一个新趋势。"
-        f"对于一直在关注AI领域的朋友来说，这是一个值得留意的信号。"
-        f"从实际应用的角度来看，这可能会带来一些相当有意思的产品变化。"
-        f"比如在智能助手、代码生成、内容创作这些场景里，我们可能会看到新的可能性。"
-        f"{history_ref}"
-        f"当然，技术的发展从来不是一蹴而就的。这条消息背后反映了整个行业在某个方向上的共同努力。"
-        f"不管是技术层面的突破还是商业模式的创新，都值得我们去理解和消化。"
-        f"我们会继续关注这个方向的后续发展。"
-    )
+def _fallback_dialogue_mid(title: str, source: str, score: int, history_ref: str) -> list[dict]:
+    """中重要性：4轮对话 ~450字"""
+    return [
+        {"speaker": HOST, "text": f"再来看看这条新闻：{title}。报道来自{source}，这条消息值得关注。"},
+        {"speaker": EXPERT, "text": "对，这个消息反映了一个很有意思的趋势。简单说一下背景——这个话题最近在行业里的讨论热度比较高。它的重要性在于反映了当前技术发展的一个新方向，对于一直在关注AI领域的朋友来说，这是一个值得留意的信号。"},
+        {"speaker": HOST, "text": "从实际应用的角度来看，这会带来什么具体变化吗？"},
+        {"speaker": EXPERT, "text": f"在智能助手、代码生成、内容创作这些场景里，我们可能会看到新的可能性。{history_ref}当然，技术的发展从来不是一蹴而就的，这条消息背后反映了整个行业在某个方向上的共同努力，值得持续关注。"},
+    ]
 
 
-def _fallback_zh_low(title: str, source: str, score: int, history_ref: str) -> str:
-    """低分中文新闻：250+ 字 ≈ 1分钟口播"""
-    return (
-        f"快速看一下这条消息：{title}。这是{source}的报道。"
-        f"虽然可能不是今天最重要的头条新闻，但对整个行业来说也是一个值得注意的信号。"
-        f"简单来说，这说明AI领域的发展正在从多个维度同时向前推进。"
-        f"技术研发、产品落地、商业模式创新、监管政策制定，各个方面都在发生着变化。"
-        f"每一条新闻背后，都反映着行业的一些细微变化和趋势调整。"
-        f"对于从业者和关注AI的朋友来说，花点时间了解这些动态，"
-        f"有助于建立更完整的行业认知和判断框架。"
-        f"关注细节、关注趋势，才能对行业有更深入的理解。"
-        f"{history_ref}"
-        f"好了，这条消息就说到这儿。"
-    )
+def _fallback_dialogue_low(title: str, source: str, score: int, history_ref: str) -> list[dict]:
+    """低重要性：3轮对话 ~300字"""
+    return [
+        {"speaker": HOST, "text": f"快速看一下这条消息：{title}。这是{source}的报道。虽然可能不是今天最重要的头条，但对整个行业来说也是一个值得注意的信号。"},
+        {"speaker": EXPERT, "text": f"是的。简单来说，这说明AI领域的发展正在从多个维度同时向前推进——技术研发、产品落地、商业模式创新，各个方面都在发生着变化。{history_ref}"},
+        {"speaker": HOST, "text": "关注细节、关注趋势，才能对行业有更深入的理解。好了，这条消息就到这儿。"},
+    ]
 
 
-def _fallback_en(title: str, source: str, score: int, history_ref: str) -> str:
-    """英文新闻脚本：确保足够长度"""
+def _fallback_en_dialogue(title: str, source: str, score: int, history_ref: str) -> list[dict]:
+    """英文来源新闻 → 中文播报（自动翻译）"""
     if score >= 7:
-        return (
-            f"Let's dive into this major story: {title}. This comes to us from {source}, "
-            f"and it's a significant development in the AI space. "
-            f"From a technical perspective, this represents a real breakthrough — not just a proof of concept, "
-            f"but something that could genuinely change how we build and deploy AI systems. "
-            f"For developers and engineers, this means new tools, new APIs, and new ways of working. "
-            f"For companies, it could translate into major efficiency gains and entirely new product categories. "
-            f"The broader implication is that AI technology is accelerating from research into production, "
-            f"and the gap between cutting-edge research and real-world applications is narrowing fast. "
-            f"{history_ref}"
-            f"We'll be keeping a close eye on how this develops. "
-            f"This is exactly the kind of story that makes following AI so exciting right now — "
-            f"every week brings something that would have seemed like science fiction just a few years ago. "
-            f"And honestly, I think we're still in the early innings of this transformation."
-        )
+        return [
+            {"speaker": HOST, "text": f"来看看来自{source}的重磅消息：{title}。这条新闻在AI领域引起了广泛关注，我们仔细聊聊。"},
+            {"speaker": EXPERT, "text": "没错，从技术角度来看，这确实是一个重要突破。不仅仅是概念验证，而是真正可能改变AI系统构建方式的东西。对于开发者来说，这意味着新的工具链、新的API和新的工作方式。"},
+            {"speaker": HOST, "text": "那对企业端和普通用户来说呢？"},
+            {"speaker": EXPERT, "text": f"对企业来说，可能带来显著的效率提升和全新的产品形态。{history_ref}从更宏观的视角看，这类消息说明AI技术正从研究加速走向生产落地。我们会持续关注后续发展。"},
+            {"speaker": HOST, "text": "这种消息正是让人对AI领域保持兴奋的原因——每周都有几年前还像科幻小说的东西变成现实。"},
+        ]
     elif score >= 5:
-        return (
-            f"Next up: {title}. This story from {source} is worth paying attention to. "
-            f"This topic has been generating a fair amount of discussion in the AI community recently, "
-            f"and for good reason. It reflects an emerging trend in how AI technology is evolving, "
-            f"particularly around practical applications and real-world deployment. "
-            f"For those of you building or using AI tools, this is a signal worth noting. "
-            f"The implications could range from new product features to shifts in developer workflows. "
-            f"{history_ref}"
-            f"Of course, technology development is never a straight line — "
-            f"there are always twists and turns along the way. But this direction looks promising, "
-            f"and we'll be watching to see how it plays out in the coming weeks and months."
-        )
+        return [
+            {"speaker": HOST, "text": f"接下来看看来自{source}的新闻：{title}。这条消息值得关注。"},
+            {"speaker": EXPERT, "text": "是的，这个话题最近在AI社区讨论度比较高，反映了AI技术演进的一个新趋势，特别是在实际应用和部署方面。"},
+            {"speaker": HOST, "text": "开发者和从业者应该关注什么？"},
+            {"speaker": EXPERT, "text": f"对于使用AI工具的人来说，这是一个值得注意的信号。{history_ref}技术发展从来不是一帆风顺的，但这个方向看起来很有前景，我们继续观察。"},
+        ]
     else:
-        return (
-            f"A quick update from {source}: {title}. "
-            f"While this may not be the biggest headline of the day, it's another data point "
-            f"showing that AI development is progressing on multiple fronts simultaneously. "
-            f"Technology, product design, business models, and regulatory frameworks are all evolving in parallel. "
-            f"Each piece of news like this helps build a more complete picture of where the industry is heading. "
-            f"{history_ref}"
-            f"For those keeping score at home, this is yet another signal that the AI landscape "
-            f"continues to shift and evolve at a remarkable pace. Stay tuned for more updates."
-        )
+        return [
+            {"speaker": HOST, "text": f"快速看一下来自{source}的消息：{title}。虽然不是今天的头条，但也是AI领域发展的一个注脚。"},
+            {"speaker": EXPERT, "text": f"确实。每一条这样的新闻都在帮我们构建更完整的行业认知。{history_ref}"},
+            {"speaker": HOST, "text": "AI领域的变化速度确实令人瞩目，我们继续关注。"},
+        ]
 
 
 def _generate_fallback(news_items: list[dict], related_news: list[dict] | None = None) -> list[dict]:
-    """生成连贯的 fallback 脚本（无结尾，24h风格）"""
+    """生成双人对话 fallback 脚本"""
     scripts: list[dict] = []
-    total = len(news_items)
-    mentioned_urls = {(n.get("url", "")) for n in (related_news or [])}
+    used_transitions: list[str] = []
 
     for i, item in enumerate(news_items):
         title = item.get("title", "Unknown")
@@ -166,12 +141,6 @@ def _generate_fallback(news_items: list[dict], related_news: list[dict] | None =
         score = item.get("importance_score", 5)
         url = item.get("url", "")
 
-        # 开头过渡：直接连接，无开场白
-        prefix = ""
-        if i > 0:
-            prefix = choice(FALLBACK_TRANSITIONS)
-
-        # 历史相关引用
         history_ref = ""
         if related_news:
             for rn in related_news[:2]:
@@ -180,26 +149,39 @@ def _generate_fallback(news_items: list[dict], related_news: list[dict] | None =
                     history_ref = f"这让人想起之前报道过的「{rn_title[:30]}」，可以说是那个方向的延续。"
                     break
 
-        # 根据语言选择模板
         is_en = item.get("language", "zh") == "en"
         if is_en:
-            body = _fallback_en(title, source, score, history_ref)
+            dialogue = _fallback_en_dialogue(title, source, score, history_ref)
         elif score >= 7:
-            body = _fallback_zh_high(title, source, score, history_ref)
+            dialogue = _fallback_dialogue_high(title, source, score, history_ref)
         elif score >= 5:
-            body = _fallback_zh_mid(title, source, score, history_ref)
+            dialogue = _fallback_dialogue_mid(title, source, score, history_ref)
         else:
-            body = _fallback_zh_low(title, source, score, history_ref)
+            dialogue = _fallback_dialogue_low(title, source, score, history_ref)
+
+        # 为第一条之后的新闻添加过渡语
+        if i > 0:
+            trans = choice([t for t in _FALLBACK_TRANSITIONS_HOST if t not in used_transitions] or _FALLBACK_TRANSITIONS_HOST)
+            used_transitions.append(trans)
+            dialogue[0]["text"] = trans + " " + dialogue[0]["text"]
+
+        # 随机变一下专家开场白
+        if len(dialogue) >= 2 and dialogue[1]["speaker"] == EXPERT:
+            if choice([True, False]):
+                dialogue[1]["text"] = choice(_EXPERT_OPENINGS) + " " + dialogue[1]["text"]
+
+        combined = "\n".join(f"{d['speaker']}：{d['text']}" for d in dialogue)
 
         scripts.append({
             "news_url": url,
             "title": title,
             "source": source,
             "importance_score": score,
-            "script": f"{prefix}{body}",
+            "script": combined,
+            "dialogue": dialogue,
             "language": item.get("language", "zh"),
             "is_first": i == 0,
-            "is_last": False,  # 永远不是最后一条！
+            "is_last": False,
         })
 
     return scripts
@@ -233,19 +215,140 @@ async def retrieve_related_news(title: str, limit: int = 5) -> list[dict]:
         return []
 
 
+def _build_rag_context(related_news: list[dict]) -> str:
+    if not related_news:
+        return ""
+    lines = ["## 近期已播报的相关新闻（避免重复，可引用）"]
+    for n in related_news[:5]:
+        lines.append(f"- [{n.get('source','')}] {n.get('title','')} (评分{n.get('importance_score',0)})")
+    return "\n".join(lines) + "\n"
+
+
+def _parse_llm_response(content: str) -> list[dict] | None:
+    """解析 LLM 返回的 JSON"""
+    content = content.strip()
+    if content.startswith("```"):
+        try:
+            start = content.index("[")
+            end = content.rindex("]") + 1
+            content = content[start:end]
+        except ValueError:
+            pass
+    return json.loads(content)
+
+
+def _dialogue_to_scripts(news_items: list[dict], llm_dialogues: list[dict]) -> list[dict]:
+    """将 LLM 返回的 dialogue 数组转换为 scripts 格式"""
+    scripts: list[dict] = []
+    for i, item in enumerate(news_items):
+        llm_entry = llm_dialogues[i] if i < len(llm_dialogues) else {}
+        dialogue = llm_entry.get("dialogue", [])
+
+        if not dialogue or len(dialogue) < 2:
+            # LLM 返回的对话不完整，对这个 item 用 fallback
+            fb = _generate_fallback([item])
+            if fb:
+                scripts.append(fb[0])
+            continue
+
+        combined = "\n".join(f"{d.get('speaker', '')}：{d.get('text', '')}" for d in dialogue)
+
+        scripts.append({
+            "news_url": item.get("url", ""),
+            "title": item.get("title", ""),
+            "source": item.get("source", ""),
+            "importance_score": item.get("importance_score", 5),
+            "script": combined,
+            "dialogue": dialogue,
+            "language": item.get("language", "zh"),
+            "is_first": i == 0,
+            "is_last": False,
+        })
+
+    return scripts
+
+
+async def _generate_single_stage(news_items: list[dict], related_news: list[dict]) -> list[dict]:
+    """单阶段生成：直接生成双人对话脚本（≤5条新闻时使用）"""
+    news_for_llm = [
+        {"index": i, "title": n.get("title", ""), "source": n.get("source", ""),
+         "score": n.get("importance_score", 5), "url": n.get("url", "")}
+        for i, n in enumerate(news_items)
+    ]
+    news_json = json.dumps(news_for_llm, ensure_ascii=False, indent=2)
+    rag_context = _build_rag_context(related_news)
+
+    try:
+        llm = await llm_factory.create_from_active(temperature=0.8, streaming=False, timeout=60)
+        prompt = SINGLE_STAGE_PROMPT.format(
+            host=HOST, expert=EXPERT,
+            news_json=news_json,
+            rag_context=rag_context,
+        )
+        response = await llm.ainvoke(prompt)
+        content = response.content if hasattr(response, "content") else str(response)
+        llm_dialogues = _parse_llm_response(content)
+        return _dialogue_to_scripts(news_items, llm_dialogues)
+    except Exception as e:
+        logger.warning(f"Single-stage LLM failed: {e}, using fallback")
+        return _generate_fallback(news_items, related_news)
+
+
+async def _generate_two_stage(news_items: list[dict], related_news: list[dict]) -> list[dict]:
+    """两阶段生成：大纲 → 双人对话脚本（>5条新闻时使用，参考 Podcast-Generator）"""
+    news_for_llm = [
+        {"index": i, "title": n.get("title", ""), "source": n.get("source", ""),
+         "score": n.get("importance_score", 5), "url": n.get("url", "")}
+        for i, n in enumerate(news_items)
+    ]
+    news_json = json.dumps(news_for_llm, ensure_ascii=False, indent=2)
+    rag_context = _build_rag_context(related_news)
+
+    # 阶段 1：生成大纲
+    try:
+        llm = await llm_factory.create_from_active(temperature=0.3, streaming=False, timeout=60)
+        outline_prompt = load_prompt("script_outline.j2", news_json=news_json)
+        response = await llm.ainvoke(outline_prompt)
+        content = response.content if hasattr(response, "content") else str(response)
+        outline = _parse_llm_response(content)
+        outline_json = json.dumps(outline, ensure_ascii=False, indent=2)
+        logger.info(f"[Outline] Generated {len(outline.get('segments', []))} segments")
+    except Exception as e:
+        logger.warning(f"Outline generation failed: {e}, falling back to single-stage")
+        return await _generate_single_stage(news_items, related_news)
+
+    # 阶段 2：根据大纲生成对话脚本
+    try:
+        llm2 = await llm_factory.create_from_active(temperature=0.8, streaming=False, timeout=60)
+        dialogue_prompt = load_prompt(
+            "script_dialogue.j2",
+            outline_json=outline_json,
+            news_json=news_json,
+            rag_context=rag_context,
+        )
+        response = await llm2.ainvoke(dialogue_prompt)
+        content = response.content if hasattr(response, "content") else str(response)
+        llm_dialogues = _parse_llm_response(content)
+        return _dialogue_to_scripts(news_items, llm_dialogues)
+    except Exception as e:
+        logger.warning(f"Dialogue generation failed: {e}, using fallback")
+        return _generate_fallback(news_items, related_news)
+
+
+# ---- LangGraph 节点入口 ----
+
 async def write_scripts_node(state: ScriptWriterState) -> dict:
-    """LangGraph 节点：为所有新闻生成连贯的播客脚本（带历史检索）"""
+    """LangGraph 节点：为新闻生成双人对话播客脚本（支持智能两阶段）"""
     news_items = state.get("news_items", [])
     if not news_items:
         logger.warning("No news items to write scripts for")
         return {"scripts": [], "status": "completed"}
 
-    # 检索每一条新闻的相关历史
+    # RAG：检索历史相关新闻
     all_related: list[dict] = []
-    for item in news_items[:5]:  # 最多检查前5条
+    for item in news_items[:5]:
         related = await retrieve_related_news(item.get("title", ""))
         all_related.extend(related)
-    # 去重
     seen = set()
     unique_related = []
     for r in all_related:
@@ -253,50 +356,17 @@ async def write_scripts_node(state: ScriptWriterState) -> dict:
             seen.add(r["title"])
             unique_related.append(r)
 
-    news_for_llm = [
-        {"index": i, "title": n.get("title", ""), "source": n.get("source", ""),
-         "score": n.get("importance_score", 5), "url": n.get("url", "")}
-        for i, n in enumerate(news_items)
-    ]
-    news_json = json.dumps(news_for_llm, ensure_ascii=False, indent=2)
-    rag_context = _build_rag_context(unique_related)
+    # 智能路由：>5条用两阶段，≤5条用单阶段
+    use_two_stage = len(news_items) > 5
+    stage_label = "two-stage (outline→dialogue)" if use_two_stage else "single-stage"
+    logger.info(f"[Script Writer] {len(news_items)} news items → {stage_label}")
 
-    scripts: list[dict] = []
-    try:
-        llm = llm_factory.create_chat_model(temperature=0.8, streaming=False, timeout=15)
-        response = await llm.ainvoke(
-            BATCH_SCRIPT_PROMPT.format(news_json=news_json, rag_context=rag_context)
-        )
-        content = response.content if hasattr(response, "content") else str(response)
-        content = content.strip()
-        if content.startswith("```"):
-            start = content.index("[")
-            end = content.rindex("]") + 1
-            content = content[start:end]
-        llm_scripts = json.loads(content)
-    except Exception as e:
-        logger.warning(f"LLM script generation failed: {e}, using fallback")
-        scripts = _generate_fallback(news_items, unique_related)
-        total = sum(len(s["script"]) for s in scripts)
-        logger.info(f"[Script Writer] Fallback: {len(scripts)} scripts, {total} chars total")
-        return {"scripts": scripts, "status": "completed", "errors": []}
-
-    for i, item in enumerate(news_items):
-        llm_entry = llm_scripts[i] if i < len(llm_scripts) else {}
-        script_text = llm_entry.get("script", "")
-        if len(script_text) < 100:
-            script_text = _generate_fallback([item])[0]["script"] if item else ""
-        scripts.append({
-            "news_url": item.get("url", ""),
-            "title": item.get("title", ""),
-            "source": item.get("source", ""),
-            "importance_score": item.get("importance_score", 5),
-            "script": script_text,
-            "language": item.get("language", "zh"),
-            "is_first": i == 0,
-            "is_last": False,
-        })
+    if use_two_stage:
+        scripts = await _generate_two_stage(news_items, unique_related)
+    else:
+        scripts = await _generate_single_stage(news_items, unique_related)
 
     total_chars = sum(len(s["script"]) for s in scripts)
-    logger.info(f"[Script Writer] Generated {len(scripts)} scripts, {total_chars} chars, {len(unique_related)} related")
+    total_turns = sum(len(s.get("dialogue", [])) for s in scripts)
+    logger.info(f"[Script Writer] {len(scripts)} scripts, {total_turns} dialogue turns, {total_chars} chars")
     return {"scripts": scripts, "status": "completed", "errors": []}

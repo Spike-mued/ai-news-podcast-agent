@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     news_keywords_mode: str = "boost"
 
     # TTS
+    tts_provider: str = "edge_tts"
     tts_voice_zh: str = "zh-CN-YunxiNeural"
     tts_voice_en: str = "en-US-JennyNeural"
+    tts_voice_zh_expert: str = "zh-CN-YunyangNeural"
     tts_rate_slow: str = "-5%"
     tts_rate_normal: str = "+5%"
     tts_rate_fast: str = "+15%"
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
 
     # Database
     database_path: str = "data/podcast.db"
+
+    # Chroma 向量数据库
+    chroma_path: str = "data/chroma"
+    embedding_model: str = "text-embedding-v2"  # DashScope Embedding
 
 
 config = Settings()

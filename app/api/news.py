@@ -1,5 +1,5 @@
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from app.config import config
 from app.models.news import NewsItem, NewsListResponse, NewsStats
@@ -18,7 +18,7 @@ async def list_news(
     db = await aiosqlite.connect(config.database_path)
     db.row_factory = aiosqlite.Row
 
-    conditions = []
+    conditions = ["is_archived = 0"]
     params: list = []
 
     if source:

@@ -9,6 +9,7 @@ build/
 data/audio/episodes/*
 data/audio/playlists/*
 data/audio/assets/*
+data/chroma/
 logs/*
 !logs/.gitkeep
 .venv/

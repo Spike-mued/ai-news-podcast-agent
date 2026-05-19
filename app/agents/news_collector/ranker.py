@@ -55,7 +55,7 @@ async def rank_news(state: NewsCollectorState) -> dict:
     # Step 3: LLM 精排 Top 20（单批次快速完成）
     llm_batch = candidates[:20]
     try:
-        llm = llm_factory.create_chat_model(temperature=0.3, streaming=False, timeout=15)
+        llm = await llm_factory.create_from_active(temperature=0.3, streaming=False, timeout=15)
         news_for_llm = [{"title": n["title"][:80], "url": n["url"], "source": n["source"]} for n in llm_batch]
         news_json = json.dumps(news_for_llm, ensure_ascii=False)
         response = await llm.ainvoke(RANKING_PROMPT.format(news_json=news_json))

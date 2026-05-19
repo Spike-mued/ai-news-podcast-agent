@@ -40,8 +40,18 @@ async def start_scheduler():
         name="Health check",
     )
 
+    # 每日凌晨 3 点自动归档过期数据
+    scheduler.add_job(
+        _archive_job,
+        "cron",
+        hour=3,
+        minute=7,
+        id="daily_archive",
+        name="Daily data archive",
+    )
+
     scheduler.start()
-    logger.info(f"Scheduler started: pipeline every {interval} min")
+    logger.info(f"Scheduler started: pipeline every {interval} min, daily archive at 03:07")
 
 
 async def stop_scheduler():
@@ -69,3 +79,13 @@ async def _health_check_job():
 
     status = await get_current_queue_status()
     logger.debug(f"Health: queue={status['queue_length']}, playing={status['is_playing']}")
+
+
+async def _archive_job():
+    """每日自动归档：过期新闻 + 已播播客"""
+    try:
+        from app.api.archive import archive_all
+        result = await archive_all()
+        logger.info(f"Daily archive: {result['total']} items ({result['news_archived']} news, {result['podcasts_archived']} podcasts)")
+    except Exception as e:
+        logger.error(f"Daily archive failed: {e}")

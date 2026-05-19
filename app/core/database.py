@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS news (
     language TEXT DEFAULT 'zh',
     raw_data TEXT,
     collected_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-    is_used INTEGER DEFAULT 0
+    is_used INTEGER DEFAULT 0,
+    is_archived INTEGER DEFAULT 0
 );
 """
 
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS podcasts (
     error_message TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     completed_at TEXT,
+    is_archived INTEGER DEFAULT 0,
     FOREIGN KEY (news_id) REFERENCES news(id)
 );
 """
@@ -82,6 +84,22 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 );
 """
 
+CREATE_MODEL_CONNECTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS model_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    service_type TEXT NOT NULL CHECK(service_type IN ('llm','tts')),
+    provider TEXT NOT NULL,
+    base_url TEXT DEFAULT '',
+    api_key TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    voice TEXT DEFAULT '',
+    extra_config TEXT DEFAULT '{}',
+    is_active INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+"""
+
 CREATE_NEWS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_news_url ON news(url);",
     "CREATE INDEX IF NOT EXISTS idx_news_source ON news(source);",
@@ -93,6 +111,11 @@ CREATE_NEWS_INDEXES = [
 CREATE_PODCAST_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_podcast_news_id ON podcasts(news_id);",
     "CREATE INDEX IF NOT EXISTS idx_podcast_status ON podcasts(status);",
+]
+
+ARCHIVE_MIGRATIONS = [
+    "ALTER TABLE news ADD COLUMN is_archived INTEGER DEFAULT 0",
+    "ALTER TABLE podcasts ADD COLUMN is_archived INTEGER DEFAULT 0",
 ]
 
 
@@ -113,6 +136,23 @@ async def _seed_sources_from_yaml(db: aiosqlite.Connection):
     logger.info(f"Seeded {len(cfg.get('sources', []))} sources from YAML")
 
 
+async def _seed_model_connections(db: aiosqlite.Connection):
+    """首次启动时从 .env 导入默认模型连接"""
+    from app.config import config
+
+    defaults = [
+        ("DashScope 通义千问 (.env)", "llm", "dashscope", config.dashscope_api_base, config.dashscope_api_key, config.dashscope_model, "", 1),
+        ("Edge TTS 中文 (.env)", "tts", "edge_tts", "", "", "", config.tts_voice_zh, 1),
+    ]
+    for name, svc, prov, url, key, model, voice, active in defaults:
+        await db.execute(
+            "INSERT OR IGNORE INTO model_connections (name, service_type, provider, base_url, api_key, model, voice, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, svc, prov, url, key, model, voice, active),
+        )
+    await db.commit()
+    logger.info(f"Seeded {len(defaults)} default model connections from .env")
+
+
 async def init_database() -> aiosqlite.Connection:
     db = await aiosqlite.connect(config.database_path)
     db.row_factory = aiosqlite.Row
@@ -124,10 +164,19 @@ async def init_database() -> aiosqlite.Connection:
     await db.execute(CREATE_PODCAST_TABLE)
     await db.execute(CREATE_PLAYLIST_TABLE)
     await db.execute(CREATE_PIPELINE_RUNS_TABLE)
+    await db.execute(CREATE_MODEL_CONNECTIONS_TABLE)
 
     for idx_sql in CREATE_NEWS_INDEXES + CREATE_PODCAST_INDEXES:
         await db.execute(idx_sql)
 
+    await db.commit()
+
+    # 迁移：为旧数据库添加 is_archived 列（忽略已存在的错误）
+    for sql in ARCHIVE_MIGRATIONS:
+        try:
+            await db.execute(sql)
+        except Exception:
+            pass
     await db.commit()
 
     # 从 YAML 种子数据
@@ -135,6 +184,12 @@ async def init_database() -> aiosqlite.Connection:
     count = (await cursor.fetchone())[0]
     if count == 0:
         await _seed_sources_from_yaml(db)
+
+    # 种子默认模型连接（从 .env）
+    cursor = await db.execute("SELECT COUNT(*) FROM model_connections")
+    count = (await cursor.fetchone())[0]
+    if count == 0:
+        await _seed_model_connections(db)
 
     logger.info("Database initialized successfully")
     return db

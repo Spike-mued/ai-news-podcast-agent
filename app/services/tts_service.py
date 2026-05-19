@@ -18,7 +18,7 @@ class TTSService:
         self, text: str, title: str = "untitled", voice: str | None = None, language: str = "zh"
     ) -> dict:
         if voice is None:
-            voice = config.tts_voice if language == "zh" else "en-US-JennyNeural"
+            voice = config.tts_voice_zh if language == "zh" else config.tts_voice_en
 
         safe_name = hashlib.md5(title.encode()).hexdigest()[:12]
         filename = f"{safe_name}.mp3"
@@ -29,7 +29,7 @@ class TTSService:
 
         try:
             communicate = edge_tts.Communicate(
-                text=text, voice=voice, rate=config.tts_rate, volume=config.tts_volume
+                text=text, voice=voice, rate=config.tts_rate_normal, pitch=config.tts_pitch, volume=config.tts_volume
             )
             await communicate.save(filepath)
             return {"audio_path": filepath, "filename": filename, "cached": False}

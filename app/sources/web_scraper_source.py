@@ -1,12 +1,10 @@
 import hashlib
 
-import httpx
 from bs4 import BeautifulSoup
 from loguru import logger
 
 from app.core.constants import SOURCE_TYPE_WEB
 from app.sources.base_source import BaseNewsSource
-from app.utils.text_utils import clean_html
 
 
 class WebScraperSource(BaseNewsSource):

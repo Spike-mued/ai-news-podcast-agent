@@ -1,27 +1,42 @@
 import os
-import subprocess
-from pathlib import Path
+import shutil
 
 from loguru import logger
 
 from app.config import config
-from app.utils.audio_utils import ensure_audio_dirs, get_asset_path, get_episode_path, get_playlist_path
+from app.utils.audio_utils import ensure_audio_dirs, get_playlist_path
 
-# 自动查找 ffmpeg 路径
-_FFMPEG_PATH = None
-_FFPROBE_PATH = None
-for _p in [
-    r"C:\Users\Administrator\ffmpeg\ffmpeg-8.1.1-essentials_build\bin",
-    r"C:\ffmpeg\bin",
-    os.path.expandvars(r"%ProgramFiles%\ffmpeg\bin"),
-]:
-    _ff = os.path.join(_p, "ffmpeg.exe")
-    _fp = os.path.join(_p, "ffprobe.exe")
-    if os.path.exists(_ff):
-        _FFMPEG_PATH = _ff
-        _FFPROBE_PATH = _fp
-        os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
-        break
+
+def _find_ffmpeg():
+    """自动发现 ffmpeg 路径：先检查环境变量，再搜索常见路径"""
+    for cmd in ("ffmpeg", "ffmpeg.exe"):
+        found = shutil.which(cmd)
+        if found:
+            return found, found.replace("ffmpeg", "ffprobe").replace(".exe", ".exe") if ".exe" in found else shutil.which("ffprobe") or found.replace("ffmpeg", "ffprobe")
+    exts = (".exe", "")
+    common_dirs = [
+        os.path.expandvars(r"%ProgramFiles%\ffmpeg\bin"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\ffmpeg\bin"),
+        r"C:\ffmpeg\bin",
+        "/usr/local/bin",
+        "/usr/bin",
+    ]
+    for d in common_dirs:
+        if os.path.isdir(d):
+            for ext in exts:
+                ff = os.path.join(d, f"ffmpeg{ext}")
+                fp = os.path.join(d, f"ffprobe{ext}")
+                if os.path.isfile(ff):
+                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                    return ff, fp
+    return None, None
+
+
+_FFMPEG_PATH, _FFPROBE_PATH = _find_ffmpeg()
+if _FFMPEG_PATH:
+    logger.info(f"ffmpeg found: {_FFMPEG_PATH}")
+else:
+    logger.warning("ffmpeg not found on PATH — audio concat will use fallback")
 
 
 class AudioService:

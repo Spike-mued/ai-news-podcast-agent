@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-from app.config import config
 
 AUDIO_DIR = Path("data/audio")
 EPISODES_DIR = AUDIO_DIR / "episodes"

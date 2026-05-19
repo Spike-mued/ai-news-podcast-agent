@@ -48,7 +48,6 @@ async def _save_playlist_to_db(segments: list[dict], audio_path: str, duration: 
         # 获取已保存的 podcast IDs
         podcast_ids: list[int] = []
         for seg in segments:
-            news_url = seg.get("news_url", "")
             cursor = await db.execute("SELECT id FROM podcasts WHERE title = ? ORDER BY id DESC LIMIT 1", (seg.get("title", ""),))
             row = await cursor.fetchone()
             if row:

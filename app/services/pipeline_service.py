@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 
 import aiosqlite
 from langgraph.graph import END, StateGraph
@@ -27,6 +26,15 @@ async def run_news_collection(state: PipelineState) -> dict:
     result = await news_collector_graph.ainvoke({"sources": sources, "max_items": max_items})
     ranked_news = result.get("final_news", [])
     logger.info(f"[Phase 1] Collected {len(ranked_news)} news items")
+
+    # 写入 Chroma 向量库（日库 + 总库双写）
+    if ranked_news:
+        try:
+            from app.rag.chroma_store import index_news
+            index_news(ranked_news)
+        except Exception as e:
+            logger.warning(f"Chroma indexing failed (non-blocking): {e}")
+
     return {
         "raw_news": result.get("raw_news", []),
         "deduplicated_news": result.get("deduplicated_news", []),
@@ -86,7 +94,9 @@ async def run_playlist_building(state: PipelineState) -> dict:
     playlist_duration = concat_result.get("playlist_duration", 0)
 
     if playlist_path:
-        stream_service.add_to_queue(playlist_path, playlist_duration)
+        # 传递字幕元数据，让前端能显示匹配当前播放的字幕
+        subtitle_meta = _build_subtitle_metadata(state)
+        stream_service.add_to_queue(playlist_path, playlist_duration, subtitle_meta)
         await _mark_news_used(state)
 
     return {
@@ -112,6 +122,20 @@ async def _mark_news_used(state: PipelineState):
         await db.close()
     except Exception as e:
         logger.debug(f"Failed to mark news as used: {e}")
+
+
+def _build_subtitle_metadata(state: PipelineState) -> dict:
+    """从 pipeline state 构建字幕元数据，供前端匹配当前播放显示"""
+    scripts = state.get("scripts", [])
+    if not scripts:
+        return {"type": "podcast", "titles": [], "scripts": []}
+    return {
+        "type": "podcast",
+        "titles": [s.get("title", "") for s in scripts[:30]],
+        "scripts": [{"title": s.get("title", ""), "script": s.get("script", ""), "score": s.get("importance_score", 0)} for s in scripts[:30]],
+        "count": len(scripts),
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+    }
 
 
 # ============================================================

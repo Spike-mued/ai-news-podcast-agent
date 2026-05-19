@@ -9,15 +9,15 @@
 <body>
 
 <div class="app">
-  <!-- 左侧滚动字幕 -->
+  <!-- 左侧滚动字幕（播客脚本） -->
   <aside class="ticker">
     <div class="ticker-header">
       <span class="ticker-live">● LIVE</span>
-      <span class="ticker-title">实时播报</span>
+      <span class="ticker-title">播客字幕</span>
     </div>
     <div class="ticker-track" id="tickerTrack">
       <div class="ticker-items" id="tickerItems">
-        <div class="ticker-item">加载中...</div>
+        <div class="ticker-item">等待播客...</div>
       </div>
     </div>
     <div class="ticker-audio">
@@ -31,12 +31,15 @@
     <header class="header">
       <nav class="nav-tabs">
         <button class="nav-tab active" data-tab="news">新闻列表</button>
+        <button class="nav-tab" data-tab="models">模型服务</button>
         <button class="nav-tab" data-tab="sources">源管理</button>
         <button class="nav-tab" data-tab="podcasts">播客</button>
+        <button class="nav-tab" data-tab="chat" style="color:var(--accent)">AI助手</button>
       </nav>
       <div class="header-actions">
         <select id="sourceFilter" class="filter"><option value="">全部来源</option></select>
         <button class="btn" id="btnTrigger">立即采集</button>
+        <button class="btn" id="btnArchive" style="font-size:11px;">归档</button>
       </div>
     </header>
 
@@ -59,9 +62,54 @@
         <div class="source-list" id="sourceList"></div>
       </section>
 
+      <!-- 模型服务 -->
+      <section class="tab-panel" id="panel-models">
+        <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:20px;">
+          <div class="model-section" style="flex:1; min-width:340px;">
+            <h3 class="model-section-title">🤖 LLM 大语言模型</h3>
+            <div class="model-active" id="modelActiveLLM">加载中...</div>
+            <div class="model-list" id="modelListLLM"></div>
+            <button class="btn" id="btnAddLLM" style="margin-top:12px;">+ 添加 LLM 连接</button>
+          </div>
+          <div class="model-section" style="flex:1; min-width:340px;">
+            <h3 class="model-section-title">🔊 TTS 语音合成</h3>
+            <div class="model-active" id="modelActiveTTS">加载中...</div>
+            <div class="model-list" id="modelListTTS"></div>
+            <button class="btn" id="btnAddTTS" style="margin-top:12px;">+ 添加 TTS 连接</button>
+          </div>
+        </div>
+        <!-- 已支持服务列表 -->
+        <div class="supported-services" id="supportedServices"></div>
+      </section>
+
       <!-- 播客 -->
       <section class="tab-panel" id="panel-podcasts">
         <div class="podcast-list" id="podcastList"><div class="empty-state">暂无播客</div></div>
+      </section>
+
+      <!-- AI助手 Chat -->
+      <section class="tab-panel" id="panel-chat">
+        <div class="chat-window">
+          <div class="chat-window-msgs" id="chatMsgs">
+            <div class="chat-bubble bot">
+              <div class="chat-avatar">🤖</div>
+              <div class="chat-bubble-body">
+                <div class="chat-bubble-name">AI 新闻助手</div>
+                <div>你好！我是基于新闻知识库的 AI 助手，可以回答关于 AI 行业新闻的任何问题。试试问我：</div>
+                <div class="chat-hints-inline">
+                  <span class="hint-inline" onclick="chatSendHint(this)">今天有什么AI大新闻？</span>
+                  <span class="hint-inline" onclick="chatSendHint(this)">最近GPT有什么新进展？</span>
+                  <span class="hint-inline" onclick="chatSendHint(this)">AI芯片领域最近发生了什么？</span>
+                  <span class="hint-inline" onclick="chatSendHint(this)">上周AI行业有哪些重要事件？</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="chat-window-input">
+            <input type="text" id="chatInput" placeholder="问任何关于AI新闻的问题..." onkeydown="if(event.key==='Enter')chatSendMsg()" autocomplete="off">
+            <button id="chatSendBtn" onclick="chatSendMsg()">发送</button>
+          </div>
+        </div>
       </section>
     </div>
   </main>

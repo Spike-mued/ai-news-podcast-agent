@@ -23,12 +23,12 @@ async def list_podcasts(
     db = await aiosqlite.connect(config.database_path)
     db.row_factory = aiosqlite.Row
 
-    cursor = await db.execute("SELECT COUNT(*) FROM podcasts")
+    cursor = await db.execute("SELECT COUNT(*) FROM podcasts WHERE is_archived = 0")
     total = (await cursor.fetchone())[0]
 
     offset = (page - 1) * page_size
     cursor = await db.execute(
-        "SELECT * FROM podcasts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        "SELECT * FROM podcasts WHERE is_archived = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
         (page_size, offset),
     )
     rows = await cursor.fetchall()
